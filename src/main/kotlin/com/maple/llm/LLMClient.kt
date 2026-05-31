@@ -76,9 +76,9 @@ class LLMClient(private val config: MCMindConfig) {
                         val chunk = json.decodeFromString<StreamChunk>(data)
                         val delta = chunk.choices.firstOrNull()?.delta
                         if (delta != null) {
-                            // 只使用 content 字段，忽略 reasoning_content（思考过程）
-                            val content = delta.content
-                            if (content != null) {
+                            // 优先使用 content，如果为空则使用 reasoning_content
+                            val content = delta.content ?: delta.reasoningContent
+                            if (content != null && content.isNotEmpty()) {
                                 fullContent.append(content)
                                 onChunk(content)
                             }
