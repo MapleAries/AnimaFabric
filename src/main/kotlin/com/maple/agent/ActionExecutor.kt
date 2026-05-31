@@ -74,13 +74,13 @@ class ActionExecutor(private val bot: FakePlayer) {
     }
 
     /**
-     * 短距离移动 - 直接修改位置坐标。
+     * 短距离移动 - 使用 teleportTo 逐格移动。
      */
     private suspend fun executeMove(params: Map<String, Any>): String {
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
         val ticks = (params["ticks"] as? Number)?.toInt() ?: 20
 
-        val speed = 0.1 // 每 tick 移动距离
+        val speed = 0.15 // 每 tick 移动距离
         val yaw = Math.toRadians(bot.yRot.toDouble())
 
         // 根据方向计算移动向量
@@ -92,12 +92,14 @@ class ActionExecutor(private val bot: FakePlayer) {
             else -> return "无效方向：$direction"
         }
 
-        // 每 tick 移动
+        // 每 tick 移动并同步到客户端
         for (i in 0 until ticks) {
             val newX = bot.x + dx
-            val newY = bot.y
             val newZ = bot.z + dz
-            bot.setPos(newX, newY, newZ)
+            // 使用 teleportTo 触发位置同步
+            bot.teleportTo(newX, bot.y, newZ)
+            // 强制同步位置给所有客户端
+            bot.connection.resetPosition()
             kotlinx.coroutines.delay(50)
         }
 
