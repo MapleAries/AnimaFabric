@@ -59,32 +59,39 @@ class LLMClient(private val config: MCMindConfig) {
 
             val fullContent = StringBuilder()
             var lineCount = 0
+            var firstFewLines = mutableListOf<String>()
+
             response.body().forEach { line ->
                 lineCount++
-                logger.debug("[MC-Mind] 收到行 {}: {}", lineCount, line)
+
+                // 记录前 10 行用于调试
+                if (lineCount <= 10) {
+                    firstFewLines.add("行$lineCount: $line")
+                }
 
                 if (line.startsWith("data: ")) {
                     val data = line.removePrefix("data: ").trim()
-                    if (data == "[DONE]") {
-                        logger.debug("[MC-Mind] 收到 [DONE] 标记")
-                        return@forEach
-                    }
+                    if (data == "[DONE]") return@forEach
                     try {
                         val chunk = json.decodeFromString<StreamChunk>(data)
-                        val content = chunk.choices.firstOrNull()?.delta?.content
-                        if (content != null) {
-                            fullContent.append(content)
-                            onChunk(content)
-                            logger.debug("[MC-Mind] 收到内容: {}", content)
+                        val delta = chunk.choices.firstOrNull()?.delta
+                        if (delta != null) {
+                            // 优先使用 content，如果没有则使用 reasoning_content
+                            val content = delta.content ?: delta.reasoningContent
+                            if (content != null) {
+                                fullContent.append(content)
+                                onChunk(content)
+                            }
                         }
                     } catch (e: Exception) {
-                        logger.warn("[MC-Mind] 解析 chunk 失败: {} - 原始数据: {}", e.message, data)
+                        // 忽略解析错误
                     }
-                } else if (line.isNotBlank()) {
-                    logger.warn("[MC-Mind] 非预期行: {}", line)
                 }
             }
 
+            // 打印前几行用于调试
+            logger.info("[MC-Mind] LLM 响应前 10 行:")
+            firstFewLines.forEach { logger.info("[MC-Mind]   {}", it) }
             logger.info("[MC-Mind] LLM 响应完成，共 {} 行，内容长度: {}", lineCount, fullContent.length)
             fullContent.toString()
         } catch (e: Exception) {

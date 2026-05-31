@@ -53,5 +53,6 @@ data class StreamChoice(
 @Serializable
 data class Delta(
     val role: String? = null,
-    val content: String? = null
+    val content: String? = null,
+    @SerialName("reasoning_content") val reasoningContent: String? = null
 )
