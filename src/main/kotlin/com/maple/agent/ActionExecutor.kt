@@ -36,11 +36,15 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
      */
     private fun executeCarpetCommand(command: String): Boolean {
         return try {
+            val fullCommand = "/player $botName $command"
+            println("[MC-Mind] 执行 carpet 命令: $fullCommand")
+
             val commandManager = server.getCommands()
             val source = server.createCommandSourceStack()
-            commandManager.performPrefixedCommand(source, "/player $botName $command")
+            commandManager.performPrefixedCommand(source, fullCommand)
             true
         } catch (e: Exception) {
+            println("[MC-Mind] carpet 命令执行异常: ${e.message}")
             false
         }
     }
@@ -63,44 +67,38 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
         val distance = (params["ticks"] as? Number)?.toInt() ?: 5
 
-        // 获取 bot 当前位置和朝向
+        // 获取 bot 当前位置
         val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
-        val pos = bot.position()
-        val yaw = Math.toRadians(bot.yRot.toDouble())
+        val startPos = bot.position()
 
-        // 根据方向和距离计算目标坐标
-        val (targetX, targetZ) = when (direction.lowercase()) {
-            "forward" -> Pair(
-                pos.x - Math.sin(yaw) * distance,
-                pos.z + Math.cos(yaw) * distance
-            )
-            "backward" -> Pair(
-                pos.x + Math.sin(yaw) * distance,
-                pos.z - Math.cos(yaw) * distance
-            )
-            "left" -> Pair(
-                pos.x - Math.cos(yaw) * distance,
-                pos.z - Math.sin(yaw) * distance
-            )
-            "right" -> Pair(
-                pos.x + Math.cos(yaw) * distance,
-                pos.z + Math.sin(yaw) * distance
-            )
+        println("[MC-Mind] Bot 位置: (${startPos.x}, ${startPos.y}, ${startPos.z}), 方向: $direction, 距离: $distance")
+
+        // carpet 的 move 命令格式
+        val carpetDirection = when (direction.lowercase()) {
+            "forward" -> "forward"
+            "backward" -> "backward"
+            "left" -> "left"
+            "right" -> "right"
             else -> return "无效方向：$direction"
         }
 
-        val x = targetX.toInt()
-        val y = pos.y.toInt()
-        val z = targetZ.toInt()
+        // 开始移动
+        executeCarpetCommand("move $carpetDirection")
+        println("[MC-Mind] 开始移动: move $carpetDirection")
 
-        // 使用 carpet 的 goto 命令移动到目标位置
-        executeCarpetCommand("goto $x $y $z")
-
-        // 等待移动完成（根据距离计算等待时间）
-        val waitTime = (distance * 500L).coerceAtMost(10000L) // 每格 500ms，最多 10 秒
+        // 等待移动完成（行走速度约 4.317 格/秒，每格约 232ms）
+        val waitTime = (distance * 250L).coerceAtMost(5000L) // 每格 250ms，最多 5 秒
         kotlinx.coroutines.delay(waitTime)
 
-        return "已向 $direction 移动 ${distance}格"
+        // 停止移动
+        executeCarpetCommand("stop")
+        println("[MC-Mind] 停止移动")
+
+        // 获取移动后的位置
+        val endPos = bot.position()
+        val movedDistance = startPos.distanceTo(endPos)
+
+        return "已向 $direction 移动（约${"%.1f".format(movedDistance)}格）"
     }
 
     private fun executeLook(params: Map<String, Any>): String {
