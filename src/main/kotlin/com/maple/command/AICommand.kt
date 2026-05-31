@@ -1,6 +1,7 @@
 package com.maple.command
 
 import com.maple.agent.AgentController
+import com.maple.config.MCMindConfig
 import com.maple.entity.FakePlayerManager
 import com.mojang.brigadier.Command
 import com.mojang.brigadier.arguments.StringArgumentType
@@ -9,7 +10,6 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
 import net.minecraft.network.chat.Component
-import net.minecraft.server.level.ServerPlayer
 
 /**
  * 注册 /ai 指令：
@@ -19,13 +19,19 @@ import net.minecraft.server.level.ServerPlayer
  * - /ai kill <名字> — 移除 bot
  * - /ai list — 列出所有 bot
  * - /ai killall — 移除所有 bot
+ * - /ai config — 配置 API
  */
 object AICommand {
 
     private var controller: AgentController? = null
+    private var config: MCMindConfig? = null
 
     fun setController(ctrl: AgentController) {
         controller = ctrl
+    }
+
+    fun setConfig(cfg: MCMindConfig) {
+        config = cfg
     }
 
     fun register() {
@@ -52,6 +58,26 @@ object AICommand {
                     )
                     .then(Commands.literal("killall")
                         .executes { killAllBots(it) }
+                    )
+                    .then(Commands.literal("config")
+                        .then(Commands.literal("show")
+                            .executes { showConfig(it) }
+                        )
+                        .then(Commands.literal("url")
+                            .then(Commands.argument("value", StringArgumentType.greedyString())
+                                .executes { setConfigUrl(it) }
+                            )
+                        )
+                        .then(Commands.literal("key")
+                            .then(Commands.argument("value", StringArgumentType.greedyString())
+                                .executes { setConfigKey(it) }
+                            )
+                        )
+                        .then(Commands.literal("model")
+                            .then(Commands.argument("value", StringArgumentType.word())
+                                .executes { setConfigModel(it) }
+                            )
+                        )
                     )
                     .then(Commands.argument("name", StringArgumentType.word())
                         .then(Commands.argument("command", StringArgumentType.greedyString())
@@ -95,7 +121,6 @@ object AICommand {
             return 0
         }
 
-        // 异步执行，发送初始反馈
         context.source.sendSuccess({
             Component.literal("[AI-$name] 正在思考...")
         }, false)
@@ -162,5 +187,74 @@ object AICommand {
             Component.literal("已移除所有 $count 个 AI bot")
         }, true)
         return Command.SINGLE_SUCCESS
+    }
+
+    // === 配置命令 ===
+
+    private fun showConfig(context: CommandContext<CommandSourceStack>): Int {
+        val cfg = config ?: run {
+            context.source.sendFailure(Component.literal("配置未加载"))
+            return 0
+        }
+        context.source.sendSuccess({
+            Component.literal("""
+                === MC-Mind 配置 ===
+                API URL: ${cfg.apiUrl}
+                API Key: ${cfg.apiKey.take(8)}...${cfg.apiKey.takeLast(4)}
+                模型: ${cfg.model}
+                最大 Token: ${cfg.maxTokens}
+                超时: ${cfg.timeout}秒
+                历史轮数: ${cfg.maxHistoryTurns}
+            """.trimIndent())
+        }, false)
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun setConfigUrl(context: CommandContext<CommandSourceStack>): Int {
+        val value = StringArgumentType.getString(context, "value")
+        val cfg = config ?: return 0
+        val newConfig = cfg.copy(apiUrl = value)
+        newConfig.save()
+        // 更新内存中的配置
+        updateConfig(newConfig)
+        context.source.sendSuccess({
+            Component.literal("API URL 已设置为: $value")
+        }, true)
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun setConfigKey(context: CommandContext<CommandSourceStack>): Int {
+        val value = StringArgumentType.getString(context, "value")
+        val cfg = config ?: return 0
+        val newConfig = cfg.copy(apiKey = value)
+        newConfig.save()
+        updateConfig(newConfig)
+        context.source.sendSuccess({
+            Component.literal("API Key 已设置为: ${value.take(8)}...${value.takeLast(4)}")
+        }, true)
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun setConfigModel(context: CommandContext<CommandSourceStack>): Int {
+        val value = StringArgumentType.getString(context, "value")
+        val cfg = config ?: return 0
+        val newConfig = cfg.copy(model = value)
+        newConfig.save()
+        updateConfig(newConfig)
+        context.source.sendSuccess({
+            Component.literal("模型已设置为: $value")
+        }, true)
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun updateConfig(newConfig: MCMindConfig) {
+        config = newConfig
+        // 重建 AgentController 以使用新配置
+        val ctrl = controller
+        if (ctrl != null) {
+            ctrl.killAll()
+        }
+        controller = AgentController(newConfig)
+        setController(controller!!)
     }
 }

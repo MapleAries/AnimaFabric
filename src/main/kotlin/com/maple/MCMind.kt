@@ -21,6 +21,7 @@ object MCMind : ModInitializer {
         // 初始化 AgentController
         controller = AgentController(config)
         AICommand.setController(controller)
+        AICommand.setConfig(config)
 
         // 注册命令
         AICommand.register()
