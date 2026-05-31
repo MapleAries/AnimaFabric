@@ -65,7 +65,7 @@ object AICommand {
     private fun spawnBot(context: CommandContext<CommandSourceStack>): Int {
         val name = StringArgumentType.getString(context, "name")
         val player = context.source.playerOrException
-        val level = player.serverLevel()
+        val level = player.level() as net.minecraft.server.level.ServerLevel
         val pos = player.position()
 
         val ctrl = controller ?: run {

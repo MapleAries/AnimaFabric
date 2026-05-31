@@ -2,10 +2,12 @@ package com.maple.entity
 
 import com.maple.agent.ActionPack
 import com.mojang.authlib.GameProfile
-import net.minecraft.network.chat.Component
+import net.minecraft.server.level.ClientInformation
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.server.network.CommonListenerCookie
 import net.minecraft.world.damagesource.DamageSource
+import net.minecraft.world.entity.ai.attributes.Attributes
 import java.util.UUID
 
 /**
@@ -15,15 +17,14 @@ import java.util.UUID
 class FakePlayer(
     level: ServerLevel,
     profile: GameProfile
-) : ServerPlayer(level.server, level, profile, level.server.createClientInformation(profile)) {
+) : ServerPlayer(level.server, level, profile, ClientInformation.createDefault()) {
 
     val actionPack = ActionPack()
     var botName: String = profile.name
 
     init {
-        // 设置初始位置和状态
         this.health = 20.0f
-        this.maxUpStep = 0.6f
+        getAttribute(Attributes.STEP_HEIGHT)?.baseValue = 0.6
     }
 
     override fun tick() {
@@ -33,7 +34,6 @@ class FakePlayer(
 
     override fun die(damageSource: DamageSource) {
         super.die(damageSource)
-        // 假玩家死亡后自动移除
         this.health = 20.0f
         this.foodData.foodLevel = 20
         this.discard()
@@ -41,9 +41,8 @@ class FakePlayer(
 
     override fun getIpAddress(): String = "127.0.0.1"
 
-    override fun isInvulnerableTo(damageSource: DamageSource): Boolean {
-        // 可以根据需要配置是否无敌
-        return super.isInvulnerableTo(damageSource)
+    override fun isInvulnerableTo(level: ServerLevel, source: DamageSource): Boolean {
+        return super.isInvulnerableTo(level, source)
     }
 
     companion object {
@@ -55,12 +54,11 @@ class FakePlayer(
             val profile = GameProfile(uuid, "[AI] $name")
             val fakePlayer = FakePlayer(level, profile)
 
-            // 设置位置
-            fakePlayer.moveTo(x, y, z, 0f, 0f)
+            fakePlayer.setPos(x, y, z)
 
-            // 注册到服务器玩家列表
             val server = level.server
-            server.playerList.placeNewPlayer(FakeClientConnection(), fakePlayer)
+            val cookie = CommonListenerCookie.createInitial(profile, false)
+            server.playerList.placeNewPlayer(FakeClientConnection(level.server), fakePlayer, cookie)
 
             return fakePlayer
         }
@@ -71,8 +69,7 @@ class FakePlayer(
         fun remove(player: FakePlayer) {
             player.actionPack.stopAll()
             player.discard()
-            // 从玩家列表中移除
-            player.server.playerList.remove(player)
+            player.level().server.playerList.remove(player)
         }
     }
 }

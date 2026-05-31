@@ -3,9 +3,7 @@ package com.maple.agent
 import net.minecraft.core.BlockPos
 import net.minecraft.world.entity.EntityType
 import net.minecraft.world.entity.player.Player
-import net.minecraft.world.level.Level
-import net.minecraft.world.level.block.Blocks
-import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.entity.MobCategory
 
 object WorldPerception {
 
@@ -37,7 +35,7 @@ object WorldPerception {
                     val bp = pos.offset(dx, dy, dz)
                     val state = level.getBlockState(bp)
                     if (!state.isAir) {
-                        val name = getBlockName(state)
+                        val name = state.block.name.string
                         blockCounts[name] = (blockCounts[name] ?: 0) + 1
                     }
                 }
@@ -56,13 +54,13 @@ object WorldPerception {
             .take(10)
             .joinToString("\n") { entity ->
                 val dist = "%.1f".format(entity.distanceTo(player))
-                val hostile = if (isHostile(entity.type)) "⚠敌对" else "友好"
-                "  - ${entity.name.string} ($dist格) [$hostile]"
+                val hostile = if (entity.type.category == MobCategory.MONSTER) "⚠敌对" else "友好"
+                "  - ${entity.name.string} (${dist}格) [$hostile]"
             }
             .ifEmpty { "  （无）" }
 
         // 时间
-        val dayTime = level.dayTime % 24000
+        val dayTime = (level.overworldClockTime % 24000).toInt()
         val timeStr = when {
             dayTime < 6000 -> "清晨"
             dayTime < 12000 -> "白天"
@@ -86,13 +84,5 @@ $nearbyBlocks
 附近实体（半径16格）：
 $entities
 """.trimIndent()
-    }
-
-    private fun getBlockName(state: BlockState): String {
-        return state.block.name.string
-    }
-
-    private fun isHostile(type: EntityType<*>): Boolean {
-        return type.category == net.minecraft.world.entity.MobCategory.MONSTER
     }
 }

@@ -177,7 +177,7 @@ class ActionPack {
         when (hitResult.type) {
             net.minecraft.world.phys.HitResult.Type.ENTITY -> {
                 val entityHit = hitResult as net.minecraft.world.phys.EntityHitResult
-                player.interactOn(entityHit.entity, InteractionHand.MAIN_HAND)
+                player.interactOn(entityHit.entity, InteractionHand.MAIN_HAND, hitResult.location)
             }
             net.minecraft.world.phys.HitResult.Type.BLOCK -> {
                 val blockHit = hitResult as net.minecraft.world.phys.BlockHitResult

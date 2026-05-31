@@ -38,10 +38,10 @@ $toolDescriptions
 ```json
 {"pipeline": [
     {"tool": "工具1", "parameters": {"参数": "值"}},
-    {"tool": "工具2", "parameters": {"参数": "$result"}}
+    {"tool": "工具2", "parameters": {"参数": "${'$'}result"}}
 ]}
 ```
-在管线中，后续步骤可以使用 `$result` 引用前一步骤的结果。
+在管线中，后续步骤可以使用 ${'$'}result 引用前一步骤的结果。
 
 ### 澄清请求（当指令不明确时）
 ```json

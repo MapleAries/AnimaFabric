@@ -4,8 +4,11 @@ import com.maple.entity.FakePlayer
 import com.maple.pathfinding.AStarPathfinder
 import com.maple.pathfinding.PathFollower
 import net.minecraft.core.BlockPos
+import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
-import net.minecraft.world.level.block.Blocks
+import net.minecraft.commands.arguments.EntityAnchorArgument
+import net.minecraft.world.phys.Vec3
 
 /**
  * 工具分发 + 执行逻辑。
@@ -54,12 +57,10 @@ class ActionExecutor(private val bot: FakePlayer) {
 
         pathFollower.setPath(path)
 
-        // 等待路径跟随完成
         var ticks = 0
-        val maxTicks = 200 // 10秒超时
+        val maxTicks = 200
         while (pathFollower.tick(bot) && ticks < maxTicks) {
             ticks++
-            // 每 tick 等待
             kotlinx.coroutines.delay(50)
         }
 
@@ -138,11 +139,8 @@ class ActionExecutor(private val bot: FakePlayer) {
             return "($x, $y, $z) 处没有方块"
         }
 
-        // 先看向方块
-        bot.lookAt(net.minecraft.world.entity.EntityAnchorArgument.Anchor.EYES,
-            net.minecraft.world.phys.Vec3(x + 0.5, y + 0.5, z + 0.5))
+        bot.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3(x + 0.5, y + 0.5, z + 0.5))
 
-        // 开始破坏
         bot.actionPack.start(ActionPack.ActionType.ATTACK, ActionPack.Action.continuous(ActionPack.ActionType.ATTACK))
 
         return "开始挖掘 ($x, $y, $z) 的 ${state.block.name.string}"
@@ -157,16 +155,11 @@ class ActionExecutor(private val bot: FakePlayer) {
         val pos = BlockPos(x, y, z)
         val level = bot.level() as ServerLevel
 
-        // 尝试解析方块类型
-        val block = net.minecraft.core.registries.BuiltInRegistries.BLOCK
-            .getOptional(net.minecraft.resources.ResourceLocation.tryParse(blockName))
-            .orElse(null) ?: return "未知方块类型：$blockName"
+        val block = BuiltInRegistries.BLOCK.getOptional(Identifier.tryParse(blockName)).orElse(null)
+            ?: return "未知方块类型：$blockName"
 
-        // 看向放置位置
-        bot.lookAt(net.minecraft.world.entity.EntityAnchorArgument.Anchor.EYES,
-            net.minecraft.world.phys.Vec3(x + 0.5, y + 0.5, z + 0.5))
+        bot.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3(x + 0.5, y + 0.5, z + 0.5))
 
-        // 放置方块
         level.setBlock(pos, block.defaultBlockState(), 3)
 
         return "已在 ($x, $y, $z) 放置 $blockName"
@@ -222,7 +215,7 @@ class ActionExecutor(private val bot: FakePlayer) {
 
     private fun executeSendMessage(params: Map<String, Any>): String {
         val message = params["message"] as? String ?: return "缺少参数 message"
-        val server = bot.server
+        val server = bot.level().server
         server.playerList.broadcastSystemMessage(
             net.minecraft.network.chat.Component.literal("[AI-${bot.botName}] $message"),
             false

@@ -78,10 +78,10 @@ class LLMClient(private val config: MCMindConfig) {
             val response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofLines())
 
             val fullContent = StringBuilder()
-            response.body().forEachLine { line ->
+            response.body().forEach { line ->
                 if (line.startsWith("data: ")) {
                     val data = line.removePrefix("data: ").trim()
-                    if (data == "[DONE]") return@forEachLine
+                    if (data == "[DONE]") return@forEach
                     try {
                         val chunk = json.decodeFromString<StreamChunk>(data)
                         val content = chunk.choices.firstOrNull()?.delta?.content
