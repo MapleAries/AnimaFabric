@@ -4,6 +4,7 @@ plugins {
 	id("net.fabricmc.fabric-loom")
 	`maven-publish`
 	id("org.jetbrains.kotlin.jvm") version "2.3.21"
+	id("org.jetbrains.kotlin.plugin.serialization") version "2.3.21"
 }
 
 version = providers.gradleProperty("mod_version").get()
@@ -43,6 +44,7 @@ dependencies {
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	implementation("net.fabricmc.fabric-api:fabric-api:${providers.gradleProperty("fabric_api_version").get()}")
 	implementation("net.fabricmc:fabric-language-kotlin:${providers.gradleProperty("fabric_kotlin_version").get()}")
+	implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 }
 
 tasks.processResources {
