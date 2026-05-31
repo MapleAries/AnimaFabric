@@ -73,25 +73,33 @@ class ActionExecutor(private val bot: FakePlayer) {
         }
     }
 
+    /**
+     * 短距离移动 - 直接修改位置坐标。
+     */
     private suspend fun executeMove(params: Map<String, Any>): String {
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
         val ticks = (params["ticks"] as? Number)?.toInt() ?: 20
 
-        // 通过 ActionPack 设置移动方向
-        when (direction.lowercase()) {
-            "forward" -> bot.actionPack.forward = 1.0f
-            "backward" -> bot.actionPack.forward = -1.0f
-            "left" -> bot.actionPack.strafing = 1.0f
-            "right" -> bot.actionPack.strafing = -1.0f
+        val speed = 0.1 // 每 tick 移动距离
+        val yaw = Math.toRadians(bot.yRot.toDouble())
+
+        // 根据方向计算移动向量
+        val (dx, dz) = when (direction.lowercase()) {
+            "forward" -> Pair(-Math.sin(yaw) * speed, Math.cos(yaw) * speed)
+            "backward" -> Pair(Math.sin(yaw) * speed, -Math.cos(yaw) * speed)
+            "left" -> Pair(-Math.cos(yaw) * speed, -Math.sin(yaw) * speed)
+            "right" -> Pair(Math.cos(yaw) * speed, Math.sin(yaw) * speed)
             else -> return "无效方向：$direction"
         }
 
-        // 等待指定 tick 数（每 tick 50ms）
-        kotlinx.coroutines.delay(ticks * 50L)
-
-        // 停止移动
-        bot.actionPack.forward = 0f
-        bot.actionPack.strafing = 0f
+        // 每 tick 移动
+        for (i in 0 until ticks) {
+            val newX = bot.x + dx
+            val newY = bot.y
+            val newZ = bot.z + dz
+            bot.setPos(newX, newY, newZ)
+            kotlinx.coroutines.delay(50)
+        }
 
         return "已向 $direction 移动 ${ticks}tick"
     }
@@ -234,8 +242,6 @@ class ActionExecutor(private val bot: FakePlayer) {
     private fun executeStop(): String {
         bot.actionPack.stopAll()
         pathFollower.stop()
-        bot.zza = 0f
-        bot.xxa = 0f
         return "已停止所有动作"
     }
 }
