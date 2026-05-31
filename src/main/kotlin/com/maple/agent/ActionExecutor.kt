@@ -73,19 +73,27 @@ class ActionExecutor(private val bot: FakePlayer) {
         }
     }
 
-    private fun executeMove(params: Map<String, Any>): String {
+    private suspend fun executeMove(params: Map<String, Any>): String {
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
         val ticks = (params["ticks"] as? Number)?.toInt() ?: 20
 
+        // 通过 ActionPack 设置移动方向
         when (direction.lowercase()) {
-            "forward" -> bot.zza = 1.0f
-            "backward" -> bot.zza = -1.0f
-            "left" -> bot.xxa = 1.0f
-            "right" -> bot.xxa = -1.0f
+            "forward" -> bot.actionPack.forward = 1.0f
+            "backward" -> bot.actionPack.forward = -1.0f
+            "left" -> bot.actionPack.strafing = 1.0f
+            "right" -> bot.actionPack.strafing = -1.0f
             else -> return "无效方向：$direction"
         }
 
-        return "开始向 $direction 移动 ${ticks}tick"
+        // 等待指定 tick 数（每 tick 50ms）
+        kotlinx.coroutines.delay(ticks * 50L)
+
+        // 停止移动
+        bot.actionPack.forward = 0f
+        bot.actionPack.strafing = 0f
+
+        return "已向 $direction 移动 ${ticks}tick"
     }
 
     private fun executeLook(params: Map<String, Any>): String {
