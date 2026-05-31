@@ -33,6 +33,7 @@ class SimpleCommandExecutor(
             "scan_area" -> executeScanArea()
             "stop" -> executeStop()
             "mine_front" -> executeMineFront()
+            "execute_command" -> executeDirectCommand(groups)
             else -> "未知指令: $action"
         }
     }
@@ -213,6 +214,27 @@ class SimpleCommandExecutor(
         } catch (e: Exception) {
             println("[MC-Mind] 指令执行异常: ${e.message}")
             false
+        }
+    }
+
+    /**
+     * 执行直接指令（如 /give, /tp 等）。
+     */
+    private fun executeDirectCommand(groups: List<String>): String {
+        val command = groups.getOrElse(1) { return "指令为空" }
+
+        return try {
+            val fullCommand = if (command.startsWith("/")) command else "/$command"
+            println("[MC-Mind] 执行直接指令: $fullCommand")
+
+            server.getCommands().performPrefixedCommand(
+                server.createCommandSourceStack(),
+                fullCommand
+            )
+
+            "已执行指令: $fullCommand"
+        } catch (e: Exception) {
+            "指令执行失败: ${e.message}"
         }
     }
 }

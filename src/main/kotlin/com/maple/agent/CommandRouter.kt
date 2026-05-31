@@ -56,6 +56,15 @@ object CommandRouter {
             return CommandType.Simple("mine_front", listOf(trimmed))
         }
 
+        // 检查是否包含直接指令关键词（需要 LLM 翻译成具体指令）
+        val commandKeywords = listOf("给我", "传送", "设置", "切换", "召唤", "杀死", "清空", "创造", "生存", "冒险", "旁观")
+        for (keyword in commandKeywords) {
+            if (trimmed.contains(keyword)) {
+                // 交给 LLM 处理，但会使用 executeCommand 工具
+                return CommandType.Complex(trimmed)
+            }
+        }
+
         // 其他情况交给 LLM 规划
         return CommandType.Complex(trimmed)
     }
