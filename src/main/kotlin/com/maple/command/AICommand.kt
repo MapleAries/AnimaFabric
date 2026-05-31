@@ -13,6 +13,7 @@ import net.minecraft.network.chat.Component
 
 /**
  * 注册 /ai 指令。
+ * 控制 carpet 生成的假人，不再自己生成。
  */
 object AICommand {
 
@@ -31,11 +32,6 @@ object AICommand {
         CommandRegistrationCallback.EVENT.register { dispatcher, _, _ ->
             dispatcher.register(
                 Commands.literal("ai")
-                    .then(Commands.literal("spawn")
-                        .then(Commands.argument("name", StringArgumentType.word())
-                            .executes { spawnBot(it) }
-                        )
-                    )
                     .then(Commands.literal("stop")
                         .then(Commands.argument("name", StringArgumentType.word())
                             .executes { stopBot(it) }
@@ -81,28 +77,6 @@ object AICommand {
         }
     }
 
-    private fun spawnBot(context: CommandContext<CommandSourceStack>): Int {
-        val name = StringArgumentType.getString(context, "name")
-        val player = context.source.playerOrException
-        val pos = player.position()
-
-        val ctrl = controller ?: run {
-            context.source.sendFailure(Component.literal("AgentController 未初始化"))
-            return 0
-        }
-
-        val success = ctrl.spawn(name, pos.x, pos.y, pos.z)
-        if (success) {
-            context.source.sendSuccess({
-                Component.literal("已生成 AI bot: $name")
-            }, true)
-        } else {
-            context.source.sendFailure(Component.literal("生成 bot 失败"))
-        }
-
-        return if (success) Command.SINGLE_SUCCESS else 0
-    }
-
     private fun sendCommand(context: CommandContext<CommandSourceStack>): Int {
         val name = StringArgumentType.getString(context, "name")
         val command = StringArgumentType.getString(context, "command")
@@ -112,8 +86,8 @@ object AICommand {
             return 0
         }
 
-        if (!FakePlayerManager.exists(name)) {
-            context.source.sendFailure(Component.literal("Bot '$name' 不存在"))
+        if (!FakePlayerManager.exists(context.source.server, name)) {
+            context.source.sendFailure(Component.literal("假人 '$name' 不存在。请先使用 /player <name> spawn 生成假人。"))
             return 0
         }
 
@@ -138,7 +112,7 @@ object AICommand {
 
         ctrl.stop(name)
         context.source.sendSuccess({
-            Component.literal("已停止 bot '$name' 的所有动作")
+            Component.literal("已停止假人 '$name' 的所有动作")
         }, true)
 
         return Command.SINGLE_SUCCESS
@@ -148,28 +122,28 @@ object AICommand {
         val name = StringArgumentType.getString(context, "name")
         val ctrl = controller ?: return 0
 
-        if (!FakePlayerManager.exists(name)) {
-            context.source.sendFailure(Component.literal("Bot '$name' 不存在"))
+        if (!FakePlayerManager.exists(context.source.server, name)) {
+            context.source.sendFailure(Component.literal("假人 '$name' 不存在"))
             return 0
         }
 
         ctrl.kill(name)
         context.source.sendSuccess({
-            Component.literal("已移除 bot: $name")
+            Component.literal("已移除假人: $name")
         }, true)
 
         return Command.SINGLE_SUCCESS
     }
 
     private fun listBots(context: CommandContext<CommandSourceStack>): Int {
-        val names = FakePlayerManager.listNames()
+        val names = FakePlayerManager.listNames(context.source.server)
         if (names.isEmpty()) {
             context.source.sendSuccess({
-                Component.literal("当前没有 AI bot")
+                Component.literal("当前没有假人。请使用 /player <name> spawn 生成假人。")
             }, false)
         } else {
             context.source.sendSuccess({
-                Component.literal("AI bot 列表：${names.joinToString(", ")}")
+                Component.literal("假人列表：${names.joinToString(", ")}")
             }, false)
         }
         return Command.SINGLE_SUCCESS
@@ -177,10 +151,10 @@ object AICommand {
 
     private fun killAllBots(context: CommandContext<CommandSourceStack>): Int {
         val ctrl = controller ?: return 0
-        val count = FakePlayerManager.listNames().size
+        val count = FakePlayerManager.listNames(context.source.server).size
         ctrl.killAll()
         context.source.sendSuccess({
-            Component.literal("已移除所有 $count 个 AI bot")
+            Component.literal("已移除所有 $count 个假人")
         }, true)
         return Command.SINGLE_SUCCESS
     }
@@ -242,11 +216,5 @@ object AICommand {
 
     private fun updateConfig(newConfig: MCMindConfig) {
         config = newConfig
-        val ctrl = controller
-        if (ctrl != null) {
-            ctrl.killAll()
-        }
-        // 需要重新创建 controller，但这需要 server 引用
-        // 暂时只更新 config，下次启动时生效
     }
 }
