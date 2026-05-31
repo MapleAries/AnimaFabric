@@ -1,0 +1,51 @@
+{
+	"schemaVersion": 1,
+	"id": "mc-mind",
+	"version": "${version}",
+	"name": "MC-Mind",
+	"description": "This is an example description! Tell everyone what your mod is about!",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/mc-mind/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			{
+				"value": "com.maple.MCMind",
+				"adapter": "kotlin"
+			}
+		],
+		"client": [
+			{
+				"value": "com.maple.client.MCMindClient",
+				"adapter": "kotlin"
+			}
+		],
+		"fabric-datagen": [
+			{
+				"value": "com.maple.client.MCMindDataGenerator",
+				"adapter": "kotlin"
+			}
+		]
+	},
+	"mixins": [
+		"mc-mind.mixins.json",
+		{
+			"config": "mc-mind.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.2",
+		"minecraft": "~26.1.2",
+		"java": ">=25",
+		"fabric-api": "*",
+		"fabric-language-kotlin": "*"
+	}
+}
