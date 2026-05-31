@@ -75,35 +75,35 @@ class ActionExecutor(private val bot: FakePlayer) {
 
     /**
      * 短距离移动 - 使用 teleportTo 逐格移动。
+     * ticks 参数解释为移动距离（格数）。
      */
     private suspend fun executeMove(params: Map<String, Any>): String {
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
-        val ticks = (params["ticks"] as? Number)?.toInt() ?: 20
+        val distance = (params["ticks"] as? Number)?.toInt() ?: 5 // 移动距离（格）
 
-        val speed = 0.15 // 每 tick 移动距离
+        val stepSize = 0.2 // 每步移动距离
+        val steps = (distance / stepSize).toInt() // 总步数
         val yaw = Math.toRadians(bot.yRot.toDouble())
 
-        // 根据方向计算移动向量
+        // 根据方向计算每步移动向量
         val (dx, dz) = when (direction.lowercase()) {
-            "forward" -> Pair(-Math.sin(yaw) * speed, Math.cos(yaw) * speed)
-            "backward" -> Pair(Math.sin(yaw) * speed, -Math.cos(yaw) * speed)
-            "left" -> Pair(-Math.cos(yaw) * speed, -Math.sin(yaw) * speed)
-            "right" -> Pair(Math.cos(yaw) * speed, Math.sin(yaw) * speed)
+            "forward" -> Pair(-Math.sin(yaw) * stepSize, Math.cos(yaw) * stepSize)
+            "backward" -> Pair(Math.sin(yaw) * stepSize, -Math.cos(yaw) * stepSize)
+            "left" -> Pair(-Math.cos(yaw) * stepSize, -Math.sin(yaw) * stepSize)
+            "right" -> Pair(Math.cos(yaw) * stepSize, Math.sin(yaw) * stepSize)
             else -> return "无效方向：$direction"
         }
 
-        // 每 tick 移动并同步到客户端
-        for (i in 0 until ticks) {
+        // 逐步移动并同步到客户端
+        for (i in 0 until steps) {
             val newX = bot.x + dx
             val newZ = bot.z + dz
-            // 使用 teleportTo 触发位置同步
             bot.teleportTo(newX, bot.y, newZ)
-            // 强制同步位置给所有客户端
             bot.connection.resetPosition()
             kotlinx.coroutines.delay(50)
         }
 
-        return "已向 $direction 移动 ${ticks}tick"
+        return "已向 $direction 移动 ${distance}格"
     }
 
     private fun executeLook(params: Map<String, Any>): String {
