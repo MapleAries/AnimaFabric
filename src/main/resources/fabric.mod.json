@@ -3,7 +3,7 @@
 	"id": "mc-mind",
 	"version": "${version}",
 	"name": "MC-Mind",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "AI-powered NPC companion mod. Send natural language commands to AI bots.",
 	"authors": [
 		"Me!"
 	],
