@@ -63,22 +63,42 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
         val distance = (params["ticks"] as? Number)?.toInt() ?: 5
 
-        // 使用 carpet 的 move 命令
-        val carpetDirection = when (direction.lowercase()) {
-            "forward" -> "forward"
-            "backward" -> "backward"
-            "left" -> "left"
-            "right" -> "right"
+        // 获取 bot 当前位置和朝向
+        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
+        val pos = bot.position()
+        val yaw = Math.toRadians(bot.yRot.toDouble())
+
+        // 根据方向和距离计算目标坐标
+        val (targetX, targetZ) = when (direction.lowercase()) {
+            "forward" -> Pair(
+                pos.x - Math.sin(yaw) * distance,
+                pos.z + Math.cos(yaw) * distance
+            )
+            "backward" -> Pair(
+                pos.x + Math.sin(yaw) * distance,
+                pos.z - Math.cos(yaw) * distance
+            )
+            "left" -> Pair(
+                pos.x - Math.cos(yaw) * distance,
+                pos.z - Math.sin(yaw) * distance
+            )
+            "right" -> Pair(
+                pos.x + Math.cos(yaw) * distance,
+                pos.z + Math.sin(yaw) * distance
+            )
             else -> return "无效方向：$direction"
         }
 
-        executeCarpetCommand("move $carpetDirection")
+        val x = targetX.toInt()
+        val y = pos.y.toInt()
+        val z = targetZ.toInt()
 
-        // 等待移动完成（每格约 50ms）
-        kotlinx.coroutines.delay(distance * 50L)
+        // 使用 carpet 的 goto 命令移动到目标位置
+        executeCarpetCommand("goto $x $y $z")
 
-        // 停止移动
-        executeCarpetCommand("stop")
+        // 等待移动完成（根据距离计算等待时间）
+        val waitTime = (distance * 500L).coerceAtMost(10000L) // 每格 500ms，最多 10 秒
+        kotlinx.coroutines.delay(waitTime)
 
         return "已向 $direction 移动 ${distance}格"
     }
