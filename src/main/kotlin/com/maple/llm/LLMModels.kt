@@ -11,7 +11,8 @@ data class ChatRequest(
     val messages: List<ChatMessage>,
     @SerialName("max_tokens") val maxTokens: Int = 1024,
     val stream: Boolean = false,
-    val temperature: Double = 0.7
+    val temperature: Double = 0.7,
+    @SerialName("enable_thinking") val enableThinking: Boolean = false
 )
 
 @Serializable
