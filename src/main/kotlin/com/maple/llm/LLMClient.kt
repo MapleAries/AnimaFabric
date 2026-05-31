@@ -58,24 +58,34 @@ class LLMClient(private val config: MCMindConfig) {
             }
 
             val fullContent = StringBuilder()
+            var lineCount = 0
             response.body().forEach { line ->
+                lineCount++
+                logger.debug("[MC-Mind] 收到行 {}: {}", lineCount, line)
+
                 if (line.startsWith("data: ")) {
                     val data = line.removePrefix("data: ").trim()
-                    if (data == "[DONE]") return@forEach
+                    if (data == "[DONE]") {
+                        logger.debug("[MC-Mind] 收到 [DONE] 标记")
+                        return@forEach
+                    }
                     try {
                         val chunk = json.decodeFromString<StreamChunk>(data)
                         val content = chunk.choices.firstOrNull()?.delta?.content
                         if (content != null) {
                             fullContent.append(content)
                             onChunk(content)
+                            logger.debug("[MC-Mind] 收到内容: {}", content)
                         }
                     } catch (e: Exception) {
-                        logger.debug("[MC-Mind] 解析 chunk 失败: {}", e.message)
+                        logger.warn("[MC-Mind] 解析 chunk 失败: {} - 原始数据: {}", e.message, data)
                     }
+                } else if (line.isNotBlank()) {
+                    logger.warn("[MC-Mind] 非预期行: {}", line)
                 }
             }
 
-            logger.info("[MC-Mind] LLM 响应完成，长度: {}", fullContent.length)
+            logger.info("[MC-Mind] LLM 响应完成，共 {} 行，内容长度: {}", lineCount, fullContent.length)
             fullContent.toString()
         } catch (e: Exception) {
             logger.error("[MC-Mind] LLM 请求异常: {}", e.message, e)

@@ -8,11 +8,11 @@ import java.nio.file.Path
 
 @Serializable
 data class MCMindConfig(
-    val apiUrl: String = "https://api.openai.com/v1/chat/completions",
+    val apiUrl: String = "https://api.deepseek.com/chat/completions",
     val apiKey: String = "",
-    val model: String = "gpt-4o-mini",
-    val maxTokens: Int = 1024,
-    val timeout: Long = 30,
+    val model: String = "deepseek-chat",
+    val maxTokens: Int = 2048,
+    val timeout: Long = 120,
     val maxHistoryTurns: Int = 10
 ) {
     companion object {
