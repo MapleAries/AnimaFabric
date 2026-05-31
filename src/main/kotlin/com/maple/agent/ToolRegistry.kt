@@ -30,10 +30,10 @@ object ToolRegistry {
         ),
         Tool(
             name = "move",
-            description = "短距离移动。按指定方向移动一定 tick 数。",
+            description = "短距离移动。按指定方向移动指定格数。",
             parameters = listOf(
                 ToolParameter("direction", "string", "方向：forward/backward/left/right"),
-                ToolParameter("ticks", "number", "持续时间（tick），默认 20", required = false)
+                ToolParameter("ticks", "number", "移动距离（格数），默认 5", required = false)
             )
         ),
         Tool(
