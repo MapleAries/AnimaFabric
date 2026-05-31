@@ -8,8 +8,7 @@ import net.minecraft.server.MinecraftServer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 主控制器：接收指令 → 调用 LLM → 执行管线。
- * 使用 carpet 的 /player 命令控制 bot。
+ * 主控制器：接收指令 → 判断类型 → 分发到简单执行器或 LLM 规划器。
  */
 class AgentController(private val config: MCMindConfig, private val server: MinecraftServer) {
 
@@ -32,15 +31,11 @@ class AgentController(private val config: MCMindConfig, private val server: Mine
 
     /**
      * 向指定 bot 发送指令。
+     * 先判断是否为简单指令，如果是则直接执行，否则交给 LLM 规划。
      */
     fun sendCommand(name: String, command: String, onComplete: (String) -> Unit) {
         if (!FakePlayerManager.exists(name)) {
             onComplete("Bot '$name' 不存在")
-            return
-        }
-
-        val memory = memories[name] ?: run {
-            onComplete("Bot '$name' 的记忆未初始化")
             return
         }
 
@@ -52,13 +47,29 @@ class AgentController(private val config: MCMindConfig, private val server: Mine
         // 取消之前的任务
         jobs[name]?.cancel()
 
+        // 分析指令类型
+        val commandType = CommandRouter.analyze(command)
+
         // 启动新任务
         jobs[name] = scope.launch {
             try {
-                val executor = ActionExecutor(name, server)
-                val pipelineExecutor = PipelineExecutor(name, server, llmClient, memory, executor)
-                val result = withTimeout(config.timeout * 2000) {
-                    pipelineExecutor.processCommand(command)
+                val result = when (commandType) {
+                    is CommandRouter.CommandType.Simple -> {
+                        // 简单指令：直接执行
+                        println("[MC-Mind] 简单指令: ${commandType.action}")
+                        val executor = SimpleCommandExecutor(name, server)
+                        executor.execute(commandType.action, commandType.groups)
+                    }
+                    is CommandRouter.CommandType.Complex -> {
+                        // 复杂指令：LLM 规划
+                        println("[MC-Mind] 复杂指令，交给 LLM 规划")
+                        val memory = memories[name] ?: ConversationMemory(config.maxHistoryTurns)
+                        val actionExecutor = ActionExecutor(name, server)
+                        val pipelineExecutor = PipelineExecutor(name, server, llmClient, memory, actionExecutor)
+                        withTimeout(config.timeout * 2000) {
+                            pipelineExecutor.processCommand(commandType.command)
+                        }
+                    }
                 }
                 onComplete(result)
             } catch (e: TimeoutCancellationException) {
@@ -79,9 +90,10 @@ class AgentController(private val config: MCMindConfig, private val server: Mine
         jobs.remove(name)
 
         try {
-            val commandManager = server.getCommands()
-            val source = server.createCommandSourceStack()
-            commandManager.performPrefixedCommand(source, "/player $name stop")
+            server.getCommands().performPrefixedCommand(
+                server.createCommandSourceStack(),
+                "/player $name stop"
+            )
         } catch (_: Exception) {}
     }
 
