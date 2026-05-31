@@ -1,6 +1,5 @@
 package com.maple.agent
 
-import com.maple.entity.FakePlayer
 import com.maple.llm.ChatMessage
 import com.maple.llm.LLMClient
 import com.maple.llm.LLMPlanner
@@ -11,11 +10,12 @@ import kotlinx.serialization.json.*
  * 解析 LLM JSON 响应并执行工具调用管线。
  */
 class PipelineExecutor(
-    private val bot: FakePlayer,
+    private val botName: String,
+    private val server: net.minecraft.server.MinecraftServer,
     private val llmClient: LLMClient,
-    private val memory: ConversationMemory
+    private val memory: ConversationMemory,
+    private val actionExecutor: ActionExecutor
 ) {
-    private val actionExecutor = ActionExecutor(bot)
     private val sharedState = SharedState()
 
     /**
@@ -23,7 +23,12 @@ class PipelineExecutor(
      */
     suspend fun processCommand(command: String): String {
         // 1. 世界感知
-        val worldState = com.maple.agent.WorldPerception.scan(bot)
+        val bot = server.playerList.getPlayerByName(botName)
+        val worldState = if (bot != null) {
+            WorldPerception.scan(bot)
+        } else {
+            "Bot 不在线"
+        }
 
         // 2. 构建 LLM 请求
         val systemPrompt = LLMPlanner.buildSystemPrompt(worldState)
@@ -33,10 +38,7 @@ class PipelineExecutor(
         messages.addAll(memory.getMessages())
 
         // 3. 调用 LLM（流式）
-        val responseBuilder = StringBuilder()
-        val response = llmClient.chatStream(messages) { chunk ->
-            responseBuilder.append(chunk)
-        }
+        val response = llmClient.chatStream(messages) { }
 
         if (response.isEmpty()) {
             return "LLM 请求失败，请检查配置。"
@@ -49,8 +51,7 @@ class PipelineExecutor(
         // 5. 执行
         return when (parsed) {
             is ParsedResponse.ToolCall -> {
-                val result = executeStep(parsed.step)
-                result
+                executeStep(parsed.step)
             }
             is ParsedResponse.Pipeline -> {
                 executePipeline(parsed.steps)
@@ -110,7 +111,6 @@ class PipelineExecutor(
         val results = mutableListOf<String>()
 
         for ((index, step) in steps.withIndex()) {
-            // 解析占位符
             val resolvedParams = sharedState.resolveAll(
                 step.params.mapValues { it.value.toString() }
             )
@@ -118,14 +118,12 @@ class PipelineExecutor(
             val result = executeStep(PipelineStep(step.tool, resolvedParams))
             results.add("步骤 ${index + 1} [${step.tool}]: $result")
 
-            // 更新共享状态
             if (step.tool == "moveTo") {
                 sharedState.set("moveTo_result", result)
             } else if (step.tool == "mineBlock") {
                 sharedState.set("mineBlock_result", result)
             }
 
-            // 如果步骤失败，停止执行
             if (result.startsWith("失败") || result.startsWith("错误")) {
                 break
             }
@@ -139,7 +137,6 @@ class PipelineExecutor(
     }
 
     private fun extractJson(text: String): String {
-        // 尝试从文本中提取 JSON
         val start = text.indexOf('{')
         val end = text.lastIndexOf('}')
         if (start == -1 || end == -1 || start >= end) {

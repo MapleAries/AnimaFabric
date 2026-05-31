@@ -12,14 +12,7 @@ import net.minecraft.commands.Commands
 import net.minecraft.network.chat.Component
 
 /**
- * 注册 /ai 指令：
- * - /ai spawn <名字> — 生成 AI bot
- * - /ai <名字> <指令> — 向 bot 发送指令
- * - /ai stop <名字> — 停止 bot 当前动作
- * - /ai kill <名字> — 移除 bot
- * - /ai list — 列出所有 bot
- * - /ai killall — 移除所有 bot
- * - /ai config — 配置 API
+ * 注册 /ai 指令。
  */
 object AICommand {
 
@@ -91,7 +84,6 @@ object AICommand {
     private fun spawnBot(context: CommandContext<CommandSourceStack>): Int {
         val name = StringArgumentType.getString(context, "name")
         val player = context.source.playerOrException
-        val level = player.level() as net.minecraft.server.level.ServerLevel
         val pos = player.position()
 
         val ctrl = controller ?: run {
@@ -99,12 +91,16 @@ object AICommand {
             return 0
         }
 
-        val bot = ctrl.spawn(name, level, pos.x, pos.y, pos.z)
-        context.source.sendSuccess({
-            Component.literal("已生成 AI bot: [AI] $name")
-        }, true)
+        val success = ctrl.spawn(name, pos.x, pos.y, pos.z)
+        if (success) {
+            context.source.sendSuccess({
+                Component.literal("已生成 AI bot: $name")
+            }, true)
+        } else {
+            context.source.sendFailure(Component.literal("生成 bot 失败"))
+        }
 
-        return Command.SINGLE_SUCCESS
+        return if (success) Command.SINGLE_SUCCESS else 0
     }
 
     private fun sendCommand(context: CommandContext<CommandSourceStack>): Int {
@@ -122,13 +118,13 @@ object AICommand {
         }
 
         context.source.sendSuccess({
-            Component.literal("[AI-$name] 正在思考...")
+            Component.literal("[$name] 正在思考...")
         }, false)
 
         ctrl.sendCommand(name, command) { result ->
             context.source.server.execute {
                 context.source.sendSuccess({
-                    Component.literal("[AI-$name] $result")
+                    Component.literal("[$name] $result")
                 }, false)
             }
         }
@@ -189,8 +185,6 @@ object AICommand {
         return Command.SINGLE_SUCCESS
     }
 
-    // === 配置命令 ===
-
     private fun showConfig(context: CommandContext<CommandSourceStack>): Int {
         val cfg = config ?: run {
             context.source.sendFailure(Component.literal("配置未加载"))
@@ -215,7 +209,6 @@ object AICommand {
         val cfg = config ?: return 0
         val newConfig = cfg.copy(apiUrl = value)
         newConfig.save()
-        // 更新内存中的配置
         updateConfig(newConfig)
         context.source.sendSuccess({
             Component.literal("API URL 已设置为: $value")
@@ -249,12 +242,11 @@ object AICommand {
 
     private fun updateConfig(newConfig: MCMindConfig) {
         config = newConfig
-        // 重建 AgentController 以使用新配置
         val ctrl = controller
         if (ctrl != null) {
             ctrl.killAll()
         }
-        controller = AgentController(newConfig)
-        setController(controller!!)
+        // 需要重新创建 controller，但这需要 server 引用
+        // 暂时只更新 config，下次启动时生效
     }
 }

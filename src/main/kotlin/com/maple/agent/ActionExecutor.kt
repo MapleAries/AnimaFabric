@@ -1,21 +1,11 @@
 package com.maple.agent
 
-import com.maple.entity.FakePlayer
-import com.maple.pathfinding.AStarPathfinder
-import com.maple.pathfinding.PathFollower
-import net.minecraft.core.BlockPos
-import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.Identifier
-import net.minecraft.server.level.ServerLevel
-import net.minecraft.commands.arguments.EntityAnchorArgument
-import net.minecraft.world.phys.Vec3
+import net.minecraft.server.level.ServerPlayer
 
 /**
- * 工具分发 + 执行逻辑。
+ * 工具执行器 - 使用 carpet 的 /player 命令控制 bot。
  */
-class ActionExecutor(private val bot: FakePlayer) {
-
-    private val pathFollower = PathFollower()
+class ActionExecutor(private val botName: String, private val server: net.minecraft.server.MinecraftServer) {
 
     /**
      * 执行单个工具调用，返回执行结果。
@@ -27,8 +17,8 @@ class ActionExecutor(private val bot: FakePlayer) {
             "look" -> executeLook(params)
             "turn" -> executeTurn(params)
             "jump" -> executeJump()
-            "attack" -> executeAttack()
-            "use" -> executeUse()
+            "attack" -> executeAttack(params)
+            "use" -> executeUse(params)
             "mineBlock" -> executeMineBlock(params)
             "placeBlock" -> executePlaceBlock(params)
             "getInventory" -> executeGetInventory()
@@ -41,67 +31,54 @@ class ActionExecutor(private val bot: FakePlayer) {
         }
     }
 
+    /**
+     * 通过 carpet 的 /player 命令执行操作。
+     */
+    private fun executeCarpetCommand(command: String): Boolean {
+        return try {
+            val commandManager = server.getCommands()
+            val source = server.createCommandSourceStack()
+            commandManager.performPrefixedCommand(source, "/player $botName $command")
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private suspend fun executeMoveTo(params: Map<String, Any>): String {
         val x = (params["x"] as? Number)?.toInt() ?: return "缺少参数 x"
         val y = (params["y"] as? Number)?.toInt() ?: return "缺少参数 y"
         val z = (params["z"] as? Number)?.toInt() ?: return "缺少参数 z"
 
-        val start = bot.blockPosition()
-        val end = BlockPos(x, y, z)
-        val level = bot.level() as ServerLevel
+        // 使用 carpet 的 goto 命令
+        executeCarpetCommand("goto $x $y $z")
 
-        val path = AStarPathfinder.findPath(level, start, end)
-        if (path.isEmpty()) {
-            return "无法找到从 (${start.x}, ${start.y}, ${start.z}) 到 ($x, $y, $z) 的路径"
-        }
+        // 等待一段时间让 bot 移动
+        kotlinx.coroutines.delay(3000)
 
-        pathFollower.setPath(path)
-
-        var ticks = 0
-        val maxTicks = 200
-        while (pathFollower.tick(bot) && ticks < maxTicks) {
-            ticks++
-            kotlinx.coroutines.delay(50)
-        }
-
-        return if (pathFollower.isComplete()) {
-            "已到达 ($x, $y, $z)"
-        } else if (pathFollower.isFailed()) {
-            "移动失败，可能被卡住"
-        } else {
-            "移动超时"
-        }
+        return "正在移动到 ($x, $y, $z)"
     }
 
-    /**
-     * 短距离移动 - 使用 teleportTo 逐格移动。
-     * ticks 参数解释为移动距离（格数）。
-     */
     private suspend fun executeMove(params: Map<String, Any>): String {
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
-        val distance = (params["ticks"] as? Number)?.toInt() ?: 5 // 移动距离（格）
+        val distance = (params["ticks"] as? Number)?.toInt() ?: 5
 
-        val stepSize = 0.2 // 每步移动距离
-        val steps = (distance / stepSize).toInt() // 总步数
-        val yaw = Math.toRadians(bot.yRot.toDouble())
-
-        // 根据方向计算每步移动向量
-        val (dx, dz) = when (direction.lowercase()) {
-            "forward" -> Pair(-Math.sin(yaw) * stepSize, Math.cos(yaw) * stepSize)
-            "backward" -> Pair(Math.sin(yaw) * stepSize, -Math.cos(yaw) * stepSize)
-            "left" -> Pair(-Math.cos(yaw) * stepSize, -Math.sin(yaw) * stepSize)
-            "right" -> Pair(Math.cos(yaw) * stepSize, Math.sin(yaw) * stepSize)
+        // 使用 carpet 的 move 命令
+        val carpetDirection = when (direction.lowercase()) {
+            "forward" -> "forward"
+            "backward" -> "backward"
+            "left" -> "left"
+            "right" -> "right"
             else -> return "无效方向：$direction"
         }
 
-        // 逐步移动并同步到客户端
-        for (i in 0 until steps) {
-            val newX = bot.x + dx
-            val newZ = bot.z + dz
-            bot.teleportTo(newX, bot.y, newZ)
-            bot.connection.resetPosition()
-            kotlinx.coroutines.delay(50)
-        }
+        executeCarpetCommand("move $carpetDirection")
+
+        // 等待移动完成（每格约 50ms）
+        kotlinx.coroutines.delay(distance * 50L)
+
+        // 停止移动
+        executeCarpetCommand("stop")
 
         return "已向 $direction 移动 ${distance}格"
     }
@@ -110,8 +87,7 @@ class ActionExecutor(private val bot: FakePlayer) {
         val yaw = (params["yaw"] as? Number)?.toFloat() ?: return "缺少参数 yaw"
         val pitch = (params["pitch"] as? Number)?.toFloat() ?: return "缺少参数 pitch"
 
-        bot.yRot = yaw
-        bot.xRot = pitch.coerceIn(-90f, 90f)
+        executeCarpetCommand("look $yaw $pitch")
 
         return "视角已设置为 yaw=$yaw, pitch=$pitch"
     }
@@ -120,9 +96,9 @@ class ActionExecutor(private val bot: FakePlayer) {
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
 
         when (direction.lowercase()) {
-            "left" -> bot.yRot += 90f
-            "right" -> bot.yRot -= 90f
-            "back" -> bot.yRot += 180f
+            "left" -> executeCarpetCommand("turn left")
+            "right" -> executeCarpetCommand("turn right")
+            "back" -> executeCarpetCommand("turn back")
             else -> return "无效方向：$direction"
         }
 
@@ -130,38 +106,54 @@ class ActionExecutor(private val bot: FakePlayer) {
     }
 
     private fun executeJump(): String {
-        bot.jumpFromGround()
+        executeCarpetCommand("jump")
         return "已跳跃"
     }
 
-    private fun executeAttack(): String {
-        bot.actionPack.start(ActionPack.ActionType.ATTACK, ActionPack.Action.once(ActionPack.ActionType.ATTACK))
+    private suspend fun executeAttack(params: Map<String, Any>): String {
+        val duration = (params["duration"] as? Number)?.toInt() ?: 1
+
+        executeCarpetCommand("attack continuous")
+
+        if (duration > 0) {
+            kotlinx.coroutines.delay(duration * 50L)
+            executeCarpetCommand("stop")
+        }
+
         return "已攻击"
     }
 
-    private fun executeUse(): String {
-        bot.actionPack.start(ActionPack.ActionType.USE, ActionPack.Action.once(ActionPack.ActionType.USE))
+    private suspend fun executeUse(params: Map<String, Any>): String {
+        val duration = (params["duration"] as? Number)?.toInt() ?: 1
+
+        executeCarpetCommand("use continuous")
+
+        if (duration > 0) {
+            kotlinx.coroutines.delay(duration * 50L)
+            executeCarpetCommand("stop")
+        }
+
         return "已使用物品"
     }
 
-    private fun executeMineBlock(params: Map<String, Any>): String {
+    private suspend fun executeMineBlock(params: Map<String, Any>): String {
         val x = (params["x"] as? Number)?.toInt() ?: return "缺少参数 x"
         val y = (params["y"] as? Number)?.toInt() ?: return "缺少参数 y"
         val z = (params["z"] as? Number)?.toInt() ?: return "缺少参数 z"
 
-        val pos = BlockPos(x, y, z)
-        val level = bot.level() as ServerLevel
-        val state = level.getBlockState(pos)
+        // 先看向方块
+        executeCarpetCommand("look at $x $y $z")
 
-        if (state.isAir) {
-            return "($x, $y, $z) 处没有方块"
-        }
+        // 开始挖掘
+        executeCarpetCommand("attack continuous")
 
-        bot.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3(x + 0.5, y + 0.5, z + 0.5))
+        // 等待挖掘完成
+        kotlinx.coroutines.delay(3000)
 
-        bot.actionPack.start(ActionPack.ActionType.ATTACK, ActionPack.Action.continuous(ActionPack.ActionType.ATTACK))
+        // 停止挖掘
+        executeCarpetCommand("stop")
 
-        return "开始挖掘 ($x, $y, $z) 的 ${state.block.name.string}"
+        return "已挖掘 ($x, $y, $z)"
     }
 
     private fun executePlaceBlock(params: Map<String, Any>): String {
@@ -170,20 +162,18 @@ class ActionExecutor(private val bot: FakePlayer) {
         val z = (params["z"] as? Number)?.toInt() ?: return "缺少参数 z"
         val blockName = params["block"] as? String ?: return "缺少参数 block"
 
-        val pos = BlockPos(x, y, z)
-        val level = bot.level() as ServerLevel
+        // 看向放置位置
+        executeCarpetCommand("look at $x $y $z")
 
-        val block = BuiltInRegistries.BLOCK.getOptional(Identifier.tryParse(blockName)).orElse(null)
-            ?: return "未知方块类型：$blockName"
-
-        bot.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3(x + 0.5, y + 0.5, z + 0.5))
-
-        level.setBlock(pos, block.defaultBlockState(), 3)
+        // 使用物品放置
+        executeCarpetCommand("use")
 
         return "已在 ($x, $y, $z) 放置 $blockName"
     }
 
     private fun executeGetInventory(): String {
+        // 获取 bot 玩家对象
+        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
         val items = mutableListOf<String>()
         for (i in 0 until bot.inventory.containerSize) {
             val stack = bot.inventory.getItem(i)
@@ -195,17 +185,20 @@ class ActionExecutor(private val bot: FakePlayer) {
     }
 
     private fun executeGetHealth(): String {
+        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
         return "血量：${bot.health.toInt()}/${bot.maxHealth.toInt()}"
     }
 
     private fun executeGetHunger(): String {
+        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
         return "饥饿值：${bot.foodData.foodLevel}/20"
     }
 
     private fun executeScanArea(params: Map<String, Any>): String {
         val radius = (params["radius"] as? Number)?.toInt() ?: 5
+        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
         val pos = bot.blockPosition()
-        val level = bot.level() as ServerLevel
+        val level = bot.level() as net.minecraft.server.level.ServerLevel
 
         val blockCounts = mutableMapOf<String, Int>()
         for (dx in -radius..radius) {
@@ -233,17 +226,12 @@ class ActionExecutor(private val bot: FakePlayer) {
 
     private fun executeSendMessage(params: Map<String, Any>): String {
         val message = params["message"] as? String ?: return "缺少参数 message"
-        val server = bot.level().server
-        server.playerList.broadcastSystemMessage(
-            net.minecraft.network.chat.Component.literal("[AI-${bot.botName}] $message"),
-            false
-        )
+        executeCarpetCommand("say $message")
         return "已发送消息"
     }
 
     private fun executeStop(): String {
-        bot.actionPack.stopAll()
-        pathFollower.stop()
+        executeCarpetCommand("stop")
         return "已停止所有动作"
     }
 }

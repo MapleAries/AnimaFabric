@@ -1,18 +1,17 @@
 package com.maple.agent
 
 import com.maple.config.MCMindConfig
-import com.maple.entity.FakePlayer
 import com.maple.entity.FakePlayerManager
 import com.maple.llm.LLMClient
 import kotlinx.coroutines.*
-import net.minecraft.server.level.ServerLevel
+import net.minecraft.server.MinecraftServer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 主控制器：接收指令 → 调用 LLM → 执行管线。
- * 管理每个 bot 的独立协程和对话记忆。
+ * 使用 carpet 的 /player 命令控制 bot。
  */
-class AgentController(private val config: MCMindConfig) {
+class AgentController(private val config: MCMindConfig, private val server: MinecraftServer) {
 
     private val llmClient = LLMClient(config)
     private val memories = ConcurrentHashMap<String, ConversationMemory>()
@@ -22,18 +21,20 @@ class AgentController(private val config: MCMindConfig) {
     /**
      * 生成一个新的 AI bot。
      */
-    fun spawn(name: String, level: ServerLevel, x: Double, y: Double, z: Double): FakePlayer {
-        val bot = FakePlayerManager.spawn(name, level, x, y, z)
-        memories[name] = ConversationMemory(config.maxHistoryTurns)
-        scopes[name] = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        return bot
+    fun spawn(name: String, x: Double, y: Double, z: Double): Boolean {
+        val success = FakePlayerManager.spawn(name, server, x, y, z)
+        if (success) {
+            memories[name] = ConversationMemory(config.maxHistoryTurns)
+            scopes[name] = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        }
+        return success
     }
 
     /**
      * 向指定 bot 发送指令。
      */
     fun sendCommand(name: String, command: String, onComplete: (String) -> Unit) {
-        val bot = FakePlayerManager.get(name) ?: run {
+        if (!FakePlayerManager.exists(name)) {
             onComplete("Bot '$name' 不存在")
             return
         }
@@ -54,9 +55,10 @@ class AgentController(private val config: MCMindConfig) {
         // 启动新任务
         jobs[name] = scope.launch {
             try {
-                val executor = PipelineExecutor(bot, llmClient, memory)
+                val executor = ActionExecutor(name, server)
+                val pipelineExecutor = PipelineExecutor(name, server, llmClient, memory, executor)
                 val result = withTimeout(config.timeout * 2000) {
-                    executor.processCommand(command)
+                    pipelineExecutor.processCommand(command)
                 }
                 onComplete(result)
             } catch (e: TimeoutCancellationException) {
@@ -76,10 +78,11 @@ class AgentController(private val config: MCMindConfig) {
         jobs[name]?.cancel()
         jobs.remove(name)
 
-        val bot = FakePlayerManager.get(name)
-        bot?.actionPack?.stopAll()
-        bot?.zza = 0f
-        bot?.xxa = 0f
+        try {
+            val commandManager = server.getCommands()
+            val source = server.createCommandSourceStack()
+            commandManager.performPrefixedCommand(source, "/player $name stop")
+        } catch (_: Exception) {}
     }
 
     /**
@@ -90,7 +93,7 @@ class AgentController(private val config: MCMindConfig) {
         scopes[name]?.cancel()
         scopes.remove(name)
         memories.remove(name)
-        FakePlayerManager.kill(name)
+        FakePlayerManager.kill(name, server)
     }
 
     /**
