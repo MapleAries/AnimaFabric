@@ -4,6 +4,7 @@ import com.maple.config.MCMindConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import org.slf4j.LoggerFactory
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -12,45 +13,12 @@ import java.time.Duration
 
 class LLMClient(private val config: MCMindConfig) {
 
+    private val logger = LoggerFactory.getLogger("mc-mind")
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(config.timeout))
         .build()
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-
-    /**
-     * 非流式请求：返回完整响应
-     */
-    suspend fun chat(messages: List<ChatMessage>): String? = withContext(Dispatchers.IO) {
-        try {
-            val request = ChatRequest(
-                model = config.model,
-                messages = messages,
-                maxTokens = config.maxTokens,
-                stream = false
-            )
-
-            val httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(config.apiUrl))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer ${config.apiKey}")
-                .POST(HttpRequest.BodyPublishers.ofString(json.encodeToString(request)))
-                .timeout(Duration.ofSeconds(config.timeout))
-                .build()
-
-            val response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString())
-
-            if (response.statusCode() != 200) {
-                return@withContext null
-            }
-
-            val chatResponse = json.decodeFromString<ChatResponse>(response.body())
-            chatResponse.choices.firstOrNull()?.message?.content
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
 
     /**
      * 流式请求：通过回调逐 chunk 返回内容
@@ -67,15 +35,27 @@ class LLMClient(private val config: MCMindConfig) {
                 stream = true
             )
 
+            val requestBody = json.encodeToString(request)
+            logger.info("[MC-Mind] 发送 LLM 请求: URL={}, Model={}", config.apiUrl, config.model)
+            logger.debug("[MC-Mind] 请求体: {}", requestBody)
+
             val httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(config.apiUrl))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer ${config.apiKey}")
-                .POST(HttpRequest.BodyPublishers.ofString(json.encodeToString(request)))
-                .timeout(Duration.ofSeconds(config.timeout * 2)) // 流式超时更长
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .timeout(Duration.ofSeconds(config.timeout * 2))
                 .build()
 
             val response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofLines())
+
+            logger.info("[MC-Mind] LLM 响应状态码: {}", response.statusCode())
+
+            if (response.statusCode() != 200) {
+                val errorBody = response.body().collect(java.util.stream.Collectors.joining("\n"))
+                logger.error("[MC-Mind] LLM 请求失败: 状态码={}, 响应={}", response.statusCode(), errorBody)
+                return@withContext ""
+            }
 
             val fullContent = StringBuilder()
             response.body().forEach { line ->
@@ -89,35 +69,17 @@ class LLMClient(private val config: MCMindConfig) {
                             fullContent.append(content)
                             onChunk(content)
                         }
-                    } catch (_: Exception) {
-                        // 忽略解析错误的 chunk
+                    } catch (e: Exception) {
+                        logger.debug("[MC-Mind] 解析 chunk 失败: {}", e.message)
                     }
                 }
             }
 
+            logger.info("[MC-Mind] LLM 响应完成，长度: {}", fullContent.length)
             fullContent.toString()
         } catch (e: Exception) {
-            e.printStackTrace()
+            logger.error("[MC-Mind] LLM 请求异常: {}", e.message, e)
             ""
-        }
-    }
-
-    /**
-     * 检查 API 是否可达
-     */
-    suspend fun isReachable(): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val request = HttpRequest.newBuilder()
-                .uri(URI.create(config.apiUrl.replace("/chat/completions", "/models")))
-                .header("Authorization", "Bearer ${config.apiKey}")
-                .GET()
-                .timeout(Duration.ofSeconds(5))
-                .build()
-
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-            response.statusCode() == 200
-        } catch (e: Exception) {
-            false
         }
     }
 }
