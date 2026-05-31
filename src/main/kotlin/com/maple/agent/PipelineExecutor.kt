@@ -44,8 +44,11 @@ class PipelineExecutor(
             return "LLM 请求失败，请检查配置。"
         }
 
+        println("[MC-Mind] LLM 原始响应: $response")
+
         // 4. 解析响应
         val parsed = parseResponse(response)
+        println("[MC-Mind] 解析结果: $parsed")
         memory.addAssistantMessage(response)
 
         // 5. 执行
@@ -85,7 +88,14 @@ class PipelineExecutor(
                 else -> ParsedResponse.Error("无法解析 LLM 响应：$response")
             }
         } catch (e: Exception) {
-            ParsedResponse.Error("解析 LLM 响应失败：${e.message}")
+            // 如果 JSON 解析失败，检查是否是自然语言回复
+            // 将自然语言回复作为澄清请求返回
+            if (response.isNotBlank() && !response.trimStart().startsWith("{")) {
+                println("[MC-Mind] LLM 返回自然语言，作为澄清请求处理")
+                ParsedResponse.Clarification(response)
+            } else {
+                ParsedResponse.Error("解析 LLM 响应失败：${e.message}")
+            }
         }
     }
 
