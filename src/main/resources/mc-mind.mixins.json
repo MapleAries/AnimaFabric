@@ -2,9 +2,7 @@
 	"required": true,
 	"package": "com.maple.mixin",
 	"compatibilityLevel": "JAVA_25",
-	"mixins": [
-		"ExampleMixin"
-	],
+	"mixins": [],
 	"injectors": {
 		"defaultRequire": 1
 	},
