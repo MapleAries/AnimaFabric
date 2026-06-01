@@ -138,4 +138,4 @@
 
 ## 许可证
 
-CC0 1.0 Universal — 自由学习和借鉴，欢迎用于你自己的项目。
+[MIT License](LICENSE)

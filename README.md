@@ -138,4 +138,4 @@ Player → /ai command → CommandRouter
 
 ## License
 
-CC0 1.0 Universal — feel free to learn from it and incorporate it in your own projects.
+[MIT License](LICENSE)
