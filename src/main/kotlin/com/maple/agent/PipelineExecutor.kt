@@ -141,6 +141,7 @@ class PipelineExecutor(
                 else -> value.toString()
             }
         }
+        println("[MC-Mind] 解析步骤: tool=$tool, params=$params")
         return PipelineStep(tool, params)
     }
 

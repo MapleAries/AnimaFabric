@@ -94,12 +94,12 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
 
         println("[MC-Mind] Bot 位置: (${startPos.x}, ${startPos.y}, ${startPos.z}), 方向: $direction, 距离: $distance")
 
-        // carpet 的 move 命令格式
+        // 支持多种方向格式
         val carpetDirection = when (direction.lowercase()) {
-            "forward" -> "forward"
-            "backward" -> "backward"
-            "left" -> "left"
-            "right" -> "right"
+            "forward", "north", "n" -> "forward"
+            "backward", "south", "s" -> "backward"
+            "left", "west", "w" -> "left"
+            "right", "east", "e" -> "right"
             else -> return "无效方向：$direction"
         }
 
@@ -265,7 +265,15 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
 
     private fun executeSendMessage(params: Map<String, Any>): String {
         val message = params["message"] as? String ?: return "缺少参数 message"
-        executeCarpetCommand("say $message")
+        // 使用 Minecraft 的 /say 命令而不是 carpet 的 say
+        try {
+            server.getCommands().performPrefixedCommand(
+                server.createCommandSourceStack(),
+                "/say [$botName] $message"
+            )
+        } catch (e: Exception) {
+            println("[MC-Mind] 发送消息失败: ${e.message}")
+        }
         return "已发送消息"
     }
 
