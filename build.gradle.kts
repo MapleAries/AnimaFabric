@@ -13,10 +13,6 @@ group = providers.gradleProperty("maven_group").get()
 repositories {
 	gradlePluginPortal()
 	mavenCentral()
-	maven {
-		name = "GitHub"
-		url = uri("https://raw.githubusercontent.com/gnembon/fabric-carpet/maven")
-	}
 }
 
 loom {
@@ -46,8 +42,6 @@ dependencies {
 	implementation("net.fabricmc.fabric-api:fabric-api:${providers.gradleProperty("fabric_api_version").get()}")
 	implementation("net.fabricmc:fabric-language-kotlin:${providers.gradleProperty("fabric_kotlin_version").get()}")
 	implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
-	// Carpet mod for bot control
-	implementation(files("libs/fabric-carpet-26.1+v260402.jar"))
 }
 
 tasks.processResources {
