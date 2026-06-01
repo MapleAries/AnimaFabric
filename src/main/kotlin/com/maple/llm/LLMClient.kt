@@ -93,10 +93,36 @@ class LLMClient(private val config: MCMindConfig) {
             }
 
             logger.info("[MC-Mind] LLM 响应完成 - 思考: {}字, 内容: {}字", thinkingBuilder.length, contentBuilder.length)
-            LLMResponse(thinkingBuilder.toString(), contentBuilder.toString())
+
+            // 如果 content 为空，尝试从 reasoning_content 中提取 JSON
+            val finalContent = if (contentBuilder.isBlank() && thinkingBuilder.isNotBlank()) {
+                extractJsonFromThinking(thinkingBuilder.toString())
+            } else {
+                contentBuilder.toString()
+            }
+
+            LLMResponse(thinkingBuilder.toString(), finalContent)
         } catch (e: Exception) {
             logger.error("[MC-Mind] LLM 请求异常: {}", e.message, e)
             LLMResponse("", "")
         }
+    }
+
+    /**
+     * 从思考内容中提取 JSON。
+     * 有些模型只返回 reasoning_content，需要从中提取 JSON。
+     */
+    private fun extractJsonFromThinking(thinking: String): String {
+        // 尝试找到最后一个 JSON 对象
+        val lastJsonStart = thinking.lastIndexOf('{')
+        val lastJsonEnd = thinking.lastIndexOf('}')
+
+        if (lastJsonStart != -1 && lastJsonEnd != -1 && lastJsonStart < lastJsonEnd) {
+            val jsonStr = thinking.substring(lastJsonStart, lastJsonEnd + 1)
+            logger.info("[MC-Mind] 从思考内容中提取 JSON: {}", jsonStr.take(100))
+            return jsonStr
+        }
+
+        return ""
     }
 }
