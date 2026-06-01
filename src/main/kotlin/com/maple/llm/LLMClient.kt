@@ -28,6 +28,11 @@ class LLMClient(private val config: MCMindConfig) {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
+    companion object {
+        // 思考内容正则（匹配 <think>...</think> 块）
+        private val THINK_BLOCK_REGEX = Regex("<think>[\\s\\S]*?</think>", RegexOption.DOT_MATCHES_ALL)
+    }
+
     /**
      * 流式请求：返回思考内容和实际输出。
      */
@@ -94,12 +99,8 @@ class LLMClient(private val config: MCMindConfig) {
 
             logger.info("[MC-Mind] LLM 响应完成 - 思考: {}字, 内容: {}字", thinkingBuilder.length, contentBuilder.length)
 
-            // 如果 content 为空，尝试从 reasoning_content 中提取 JSON
-            val finalContent = if (contentBuilder.isBlank() && thinkingBuilder.isNotBlank()) {
-                extractJsonFromThinking(thinkingBuilder.toString())
-            } else {
-                contentBuilder.toString()
-            }
+            // 处理响应内容
+            val finalContent = processResponse(thinkingBuilder.toString(), contentBuilder.toString())
 
             LLMResponse(thinkingBuilder.toString(), finalContent)
         } catch (e: Exception) {
@@ -109,20 +110,81 @@ class LLMClient(private val config: MCMindConfig) {
     }
 
     /**
-     * 从思考内容中提取 JSON。
-     * 有些模型只返回 reasoning_content，需要从中提取 JSON。
+     * 处理响应内容，提取有效的 JSON。
+     * 参考 AI-Player 的处理方式：
+     * 1. 剥离思考内容（<think>...</think> 块）
+     * 2. 从 content 中提取 JSON
+     * 3. 如果 content 为空，从 reasoning_content 中提取
      */
-    private fun extractJsonFromThinking(thinking: String): String {
-        // 尝试找到最后一个 JSON 对象
-        val lastJsonStart = thinking.lastIndexOf('{')
-        val lastJsonEnd = thinking.lastIndexOf('}')
+    private fun processResponse(thinking: String, content: String): String {
+        // 如果有实际内容，直接使用
+        if (content.isNotBlank()) {
+            return extractJson(content)
+        }
 
-        if (lastJsonStart != -1 && lastJsonEnd != -1 && lastJsonStart < lastJsonEnd) {
-            val jsonStr = thinking.substring(lastJsonStart, lastJsonEnd + 1)
-            logger.info("[MC-Mind] 从思考内容中提取 JSON: {}", jsonStr.take(100))
-            return jsonStr
+        // 如果只有思考内容，从中提取 JSON
+        if (thinking.isNotBlank()) {
+            logger.info("[MC-Mind] 只有思考内容，尝试从中提取 JSON")
+            return extractJsonFromThinking(thinking)
         }
 
         return ""
+    }
+
+    /**
+     * 从文本中提取 JSON。
+     * 参考 AI-Player 和 superwy 的方式：找第一个 { 到最后一个 }。
+     */
+    private fun extractJson(text: String): String {
+        // 1. 剥离思考内容（如果有）
+        val cleaned = THINK_BLOCK_REGEX.replace(text, "").trim()
+
+        // 2. 找第一个 { 和最后一个 }
+        val firstBrace = cleaned.indexOf('{')
+        val lastBrace = cleaned.lastIndexOf('}')
+
+        if (firstBrace == -1 || lastBrace == -1 || firstBrace >= lastBrace) {
+            logger.warn("[MC-Mind] 未找到有效的 JSON")
+            return ""
+        }
+
+        val jsonStr = cleaned.substring(firstBrace, lastBrace + 1)
+        logger.info("[MC-Mind] 提取的 JSON: {}", jsonStr.take(200))
+        return jsonStr
+    }
+
+    /**
+     * 从思考内容中提取 JSON。
+     * 某些模型（如 deepseek-v4-flash）只返回 reasoning_content。
+     */
+    private fun extractJsonFromThinking(thinking: String): String {
+        // 找最后一个完整的 JSON 对象
+        val lastBrace = thinking.lastIndexOf('}')
+        if (lastBrace == -1) return ""
+
+        // 向前找匹配的 {
+        var braceCount = 0
+        var start = lastBrace
+        for (i in lastBrace downTo 0) {
+            when (thinking[i]) {
+                '}' -> braceCount++
+                '{' -> braceCount--
+            }
+            if (braceCount == 0) {
+                start = i
+                break
+            }
+        }
+
+        if (braceCount != 0) {
+            // 如果没有找到匹配的 {，使用简单方式
+            val firstBrace = thinking.indexOf('{')
+            if (firstBrace == -1) return ""
+            start = firstBrace
+        }
+
+        val jsonStr = thinking.substring(start, lastBrace + 1)
+        logger.info("[MC-Mind] 从思考内容提取的 JSON: {}", jsonStr.take(200))
+        return jsonStr
     }
 }
