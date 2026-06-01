@@ -13,7 +13,8 @@ data class AnimaFabricConfig(
     val model: String = "deepseek-chat",
     val maxTokens: Int = 2048,
     val timeout: Long = 120,
-    val maxHistoryTurns: Int = 10
+    val maxHistoryTurns: Int = 10,
+    val maxRetries: Int = 3
 ) {
     companion object {
         private val CONFIG_PATH: Path = FabricLoader.getInstance().configDir.resolve("anima-fabric.json")

@@ -61,4 +61,48 @@ You: "I'll follow you! !moveTo(100, 64, 200)"
     fun buildUserPrompt(command: String): String {
         return command
     }
+
+    /**
+     * 构建重试 prompt，包含错误反馈。
+     * 当执行失败时，将错误信息回传 LLM，让它修正方案。
+     */
+    fun buildRetryPrompt(worldState: String, errorFeedback: String, attempt: Int): String {
+        val toolDescriptions = ToolRegistry.allTools.joinToString("\n") { tool ->
+            val params = tool.parameters.joinToString(", ") { "${it.name}: ${it.type}" }
+            "- !${tool.name}($params): ${tool.description}"
+        }
+
+        return """You are an AI Minecraft bot. Your previous plan failed. Please analyze the error and try a different approach.
+
+## Current World State
+$worldState
+
+## Available Commands
+$toolDescriptions
+
+## Previous Attempt (Attempt $attempt) - FAILED
+$errorFeedback
+
+## Instructions
+1. Analyze WHY the previous attempt failed
+2. Consider the current world state and adjust your approach
+3. If a block was too far, use !moveTo first to get closer
+4. If a path was blocked, try a different direction
+5. If resources are missing, try to find alternatives
+6. Generate a NEW plan that avoids the previous mistakes
+7. Do NOT repeat the exact same commands that failed
+
+## Response Rules
+1. You MUST include at least one command in every response
+2. Use the exact command format: !commandName(param1, param2)
+3. Commands are executed in order from left to right
+4. Always use actual coordinates from the world state
+5. When mining blocks farther than 5 blocks away, use !moveTo first
+
+## Important
+- Think about what went wrong and adjust your strategy
+- Prefer simpler approaches if the complex one failed
+- If you need to move closer to a target, do that FIRST
+"""
+    }
 }

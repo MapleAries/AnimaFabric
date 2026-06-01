@@ -6,11 +6,16 @@ import com.maple.llm.LLMPlanner
 import kotlinx.serialization.json.*
 
 /**
- * 管线解析 + 执行。
- * 解析 LLM 响应并执行命令。
- * 支持两种格式：
- * 1. 命令式格式：!toolName(param1, param2)
- * 2. JSON 格式：{"action": "toolName", "parameters": {...}}
+ * 管线解析 + 执行，支持错误反馈重试。
+ *
+ * 核心流程（Voyager 风格）：
+ * 1. 获取世界状态 → 构建 prompt → 调用 LLM → 解析 → 执行
+ * 2. 如果执行失败，将错误信息回传 LLM，让它修正方案后重试
+ * 3. 最多重试 maxRetries 次
+ *
+ * 支持两种 LLM 响应格式：
+ * 1. 命令式：!toolName(param1, param2)
+ * 2. JSON：{"action": "toolName", "parameters": {...}}
  */
 class PipelineExecutor(
     private val botName: String,
@@ -26,56 +31,125 @@ class PipelineExecutor(
 
     /**
      * 处理用户指令：构建提示词、调用 LLM、解析响应、执行命令。
+     * 失败时自动将错误反馈给 LLM 重试。
      */
     suspend fun processCommand(command: String): String {
-        // 1. 世界感知
-        val bot = server.playerList.getPlayerByName(botName)
-        val worldState = if (bot != null) {
-            WorldPerception.scan(bot)
-        } else {
-            "Bot not online"
-        }
+        var lastError: String? = null
+        val maxRetries = getMaxRetries()
 
-        // 2. 构建 LLM 请求
-        val systemPrompt = LLMPlanner.buildSystemPrompt(worldState)
-        memory.addUserMessage(command)
+        for (attempt in 0..maxRetries) {
+            // 1. 世界感知（每次重试都刷新）
+            val bot = server.playerList.getPlayerByName(botName)
+            val worldState = if (bot != null) {
+                WorldPerception.scan(bot)
+            } else {
+                "Bot not online"
+            }
 
-        val messages = mutableListOf(ChatMessage("system", systemPrompt))
-        messages.addAll(memory.getMessages())
+            // 2. 构建 LLM 请求（如果是重试，附加错误反馈）
+            val systemPrompt = if (attempt == 0) {
+                LLMPlanner.buildSystemPrompt(worldState)
+            } else {
+                LLMPlanner.buildRetryPrompt(worldState, lastError!!, attempt)
+            }
 
-        // 3. 调用 LLM（流式）
-        val llmResponse = llmClient.chatStream(messages)
+            // 只在第一次尝试时添加用户消息到记忆
+            if (attempt == 0) {
+                memory.addUserMessage(command)
+            }
 
-        // 4. 记录思考内容到控制台
-        if (llmResponse.thinking.isNotBlank()) {
-            println("[AnimaFabric] LLM thinking: ${llmResponse.thinking.take(200)}...")
-        }
+            val messages = mutableListOf(ChatMessage("system", systemPrompt))
+            messages.addAll(memory.getMessages())
 
-        // 5. 检查实际输出
-        if (llmResponse.content.isBlank()) {
-            return "LLM returned no content, please try again."
-        }
+            // 3. 调用 LLM（流式）
+            val llmResponse = llmClient.chatStream(messages)
 
-        println("[AnimaFabric] LLM output: ${llmResponse.content}")
+            // 4. 记录思考内容
+            if (llmResponse.thinking.isNotBlank()) {
+                println("[AnimaFabric] LLM thinking (attempt ${attempt + 1}): ${llmResponse.thinking.take(200)}...")
+            }
 
-        // 6. 解析响应
-        val parsed = parseResponse(llmResponse.content)
-        memory.addAssistantMessage(llmResponse.content)
+            // 5. 检查输出
+            if (llmResponse.content.isBlank()) {
+                lastError = "LLM returned no content"
+                println("[AnimaFabric] Retry ${attempt + 1}/$maxRetries: $lastError")
+                continue
+            }
 
-        // 7. 执行
-        return when (parsed) {
-            is ParsedResponse.Success -> {
-                // 显示自然语言部分
-                if (parsed.message.isNotBlank()) {
-                    sendChatMessage(parsed.message)
+            println("[AnimaFabric] LLM output (attempt ${attempt + 1}): ${llmResponse.content}")
+
+            // 6. 解析响应
+            val parsed = parseResponse(llmResponse.content)
+            if (attempt == 0) {
+                memory.addAssistantMessage(llmResponse.content)
+            }
+
+            // 7. 执行
+            when (parsed) {
+                is ParsedResponse.Success -> {
+                    if (parsed.commands.isEmpty()) {
+                        // 纯自然语言回复，视为成功
+                        if (parsed.message.isNotBlank()) {
+                            sendChatMessage(parsed.message)
+                        }
+                        return parsed.message
+                    }
+
+                    // 执行命令
+                    val result = executeCommands(parsed.commands)
+
+                    // 检查是否有失败的步骤
+                    val hasFailure = result.any { it.failed }
+
+                    if (!hasFailure) {
+                        // 全部成功
+                        val resultText = result.joinToString("\n") { it.message }
+                        if (parsed.message.isNotBlank()) {
+                            sendChatMessage(parsed.message)
+                        }
+                        return resultText
+                    }
+
+                    // 有失败，准备重试
+                    lastError = buildErrorFeedback(result)
+                    println("[AnimaFabric] Retry ${attempt + 1}/$maxRetries: execution failed, feeding error back to LLM")
+                    println("[AnimaFabric] Error feedback: $lastError")
                 }
-                // 执行命令
-                executeCommands(parsed.commands)
-            }
-            is ParsedResponse.Error -> {
-                parsed.message
+                is ParsedResponse.Error -> {
+                    lastError = parsed.message
+                    println("[AnimaFabric] Retry ${attempt + 1}/$maxRetries: parse error: $lastError")
+                }
             }
         }
+
+        // 所有重试都失败
+        val finalMessage = "指令执行失败（已重试 $maxRetries 次）：$lastError"
+        sendChatMessage("抱歉，我没能完成这个任务。$lastError")
+        return finalMessage
+    }
+
+    /**
+     * 从配置获取最大重试次数。
+     */
+    private fun getMaxRetries(): Int {
+        return try {
+            com.maple.config.AnimaFabricConfig.load().maxRetries
+        } catch (e: Exception) {
+            3
+        }
+    }
+
+    /**
+     * 构建错误反馈信息，用于发送给 LLM。
+     */
+    private fun buildErrorFeedback(results: List<StepResult>): String {
+        val sb = StringBuilder()
+        sb.appendLine("Your previous plan had failures:")
+        for ((index, result) in results.withIndex()) {
+            val status = if (result.failed) "FAILED" else "OK"
+            sb.appendLine("- Step ${index + 1} [${result.toolName}]: $status - ${result.message}")
+        }
+        return sb.toString().trim()
     }
 
     /**
@@ -134,23 +208,19 @@ class PipelineExecutor(
             val obj = element.jsonObject
 
             when {
-                // 新格式：reasoning + plan + tasks
                 "tasks" in obj -> {
                     val plan = obj["plan"]?.jsonPrimitive?.content ?: ""
                     val tasks = obj["tasks"]!!.jsonArray.map { parseTask(it.jsonObject) }
                     return ParsedResponse.Success(plan, tasks)
                 }
-                // 旧格式：单个工具调用
                 "tool" in obj || "action" in obj -> {
                     val task = parseTask(obj)
                     return ParsedResponse.Success("", listOf(task))
                 }
-                // 旧格式：管线
                 "pipeline" in obj -> {
                     val tasks = obj["pipeline"]!!.jsonArray.map { parseTask(it.jsonObject) }
                     return ParsedResponse.Success("", tasks)
                 }
-                // 澄清请求
                 "clarification" in obj -> {
                     return ParsedResponse.Success(obj["clarification"]!!.jsonPrimitive.content, emptyList())
                 }
@@ -159,13 +229,11 @@ class PipelineExecutor(
             // JSON 解析失败，尝试作为自然语言回复
         }
 
-        // 如果没有找到命令，返回自然语言消息
         return ParsedResponse.Success(response, emptyList())
     }
 
     /**
      * 解析命令参数。
-     * 支持：数字、字符串、布尔值
      */
     private fun parseParams(paramsStr: String): Map<String, Any> {
         val params = mutableMapOf<String, Any>()
@@ -208,10 +276,10 @@ class PipelineExecutor(
     }
 
     /**
-     * 执行命令列表。
+     * 执行命令列表，返回每个步骤的结果。
      */
-    private suspend fun executeCommands(commands: List<ParsedCommand>): String {
-        val results = mutableListOf<String>()
+    private suspend fun executeCommands(commands: List<ParsedCommand>): List<StepResult> {
+        val results = mutableListOf<StepResult>()
 
         for ((index, command) in commands.withIndex()) {
             val resolvedParams = sharedState.resolveAll(
@@ -219,7 +287,15 @@ class PipelineExecutor(
             )
 
             val result = actionExecutor.execute(command.tool, resolvedParams)
-            results.add("Step ${index + 1} [${command.tool}]: $result")
+
+            val failed = result.startsWith("Failed") ||
+                         result.startsWith("Error") ||
+                         result.startsWith("挖掘失败") ||
+                         result.startsWith("移动未完成") ||
+                         result.startsWith("Bot 不存在") ||
+                         result.startsWith("未知工具")
+
+            results.add(StepResult(command.tool, result, failed))
 
             // 更新共享状态
             if (command.tool == "moveTo") {
@@ -228,13 +304,13 @@ class PipelineExecutor(
                 sharedState.set("mineBlock_result", result)
             }
 
-            // 如果步骤失败，停止执行
-            if (result.startsWith("Failed") || result.startsWith("Error") || result.startsWith("Mining failed")) {
+            // 如果步骤失败，停止执行后续步骤
+            if (failed) {
                 break
             }
         }
 
-        return results.joinToString("\n")
+        return results
     }
 
     private fun extractJson(text: String): String {
@@ -245,6 +321,12 @@ class PipelineExecutor(
         }
         return text.substring(start, end + 1)
     }
+
+    data class StepResult(
+        val toolName: String,
+        val message: String,
+        val failed: Boolean
+    )
 
     data class ParsedCommand(
         val tool: String,
