@@ -27,7 +27,6 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             "scanArea" -> executeScanArea(params)
             "sendMessage" -> executeSendMessage(params)
             "stop" -> executeStop()
-            "executeCommand" -> executeCommand(params)
             else -> "未知工具：$toolName"
         }
     }
@@ -252,26 +251,5 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
     private fun executeStop(): String {
         executeCarpetCommand("stop")
         return "已停止所有动作"
-    }
-
-    /**
-     * 执行 Minecraft 指令。
-     */
-    private fun executeCommand(params: Map<String, Any>): String {
-        val command = params["command"] as? String ?: return "缺少参数 command"
-
-        return try {
-            val fullCommand = if (command.startsWith("/")) command else "/$command"
-            println("[MC-Mind] 执行 Minecraft 指令: $fullCommand")
-
-            server.getCommands().performPrefixedCommand(
-                server.createCommandSourceStack(),
-                fullCommand
-            )
-
-            "已执行指令: $fullCommand"
-        } catch (e: Exception) {
-            "指令执行失败: ${e.message}"
-        }
     }
 }

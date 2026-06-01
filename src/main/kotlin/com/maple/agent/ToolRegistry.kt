@@ -124,13 +124,6 @@ object ToolRegistry {
             name = "stop",
             description = "停止当前所有动作。",
             parameters = emptyList()
-        ),
-        Tool(
-            name = "executeCommand",
-            description = "执行 Minecraft 指令。可以执行任何游戏内指令，如 /give, /tp, /weather, /time 等。",
-            parameters = listOf(
-                ToolParameter("command", "string", "要执行的指令（不需要加 / 前缀）")
-            )
         )
     )
 
