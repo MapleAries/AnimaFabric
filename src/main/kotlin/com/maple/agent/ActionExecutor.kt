@@ -49,10 +49,22 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         }
     }
 
+    /**
+     * 从参数中获取整数值，支持 Number 和 String 类型。
+     */
+    private fun getIntParam(params: Map<String, Any>, key: String): Int? {
+        val value = params[key] ?: return null
+        return when (value) {
+            is Number -> value.toInt()
+            is String -> value.toDoubleOrNull()?.toInt()
+            else -> null
+        }
+    }
+
     private suspend fun executeMoveTo(params: Map<String, Any>): String {
-        val x = (params["x"] as? Number)?.toInt() ?: return "缺少参数 x"
-        val y = (params["y"] as? Number)?.toInt() ?: return "缺少参数 y"
-        val z = (params["z"] as? Number)?.toInt() ?: return "缺少参数 z"
+        val x = getIntParam(params, "x") ?: return "缺少参数 x"
+        val y = getIntParam(params, "y") ?: return "缺少参数 y"
+        val z = getIntParam(params, "z") ?: return "缺少参数 z"
 
         val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
         val startPos = bot.position()
@@ -86,7 +98,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
 
     private suspend fun executeMove(params: Map<String, Any>): String {
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
-        val distance = (params["ticks"] as? Number)?.toInt() ?: 5
+        val distance = getIntParam(params, "ticks") ?: 5
 
         // 获取 bot 当前位置
         val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
@@ -176,9 +188,9 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
     }
 
     private suspend fun executeMineBlock(params: Map<String, Any>): String {
-        val x = (params["x"] as? Number)?.toInt() ?: return "缺少参数 x"
-        val y = (params["y"] as? Number)?.toInt() ?: return "缺少参数 y"
-        val z = (params["z"] as? Number)?.toInt() ?: return "缺少参数 z"
+        val x = getIntParam(params, "x") ?: return "缺少参数 x"
+        val y = getIntParam(params, "y") ?: return "缺少参数 y"
+        val z = getIntParam(params, "z") ?: return "缺少参数 z"
 
         // 先看向方块
         executeCarpetCommand("look at $x $y $z")
@@ -196,9 +208,9 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
     }
 
     private fun executePlaceBlock(params: Map<String, Any>): String {
-        val x = (params["x"] as? Number)?.toInt() ?: return "缺少参数 x"
-        val y = (params["y"] as? Number)?.toInt() ?: return "缺少参数 y"
-        val z = (params["z"] as? Number)?.toInt() ?: return "缺少参数 z"
+        val x = getIntParam(params, "x") ?: return "缺少参数 x"
+        val y = getIntParam(params, "y") ?: return "缺少参数 y"
+        val z = getIntParam(params, "z") ?: return "缺少参数 z"
         val blockName = params["block"] as? String ?: return "缺少参数 block"
 
         // 看向放置位置
@@ -234,7 +246,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
     }
 
     private fun executeScanArea(params: Map<String, Any>): String {
-        val radius = (params["radius"] as? Number)?.toInt() ?: 5
+        val radius = getIntParam(params, "radius") ?: 5
         val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
         val pos = bot.blockPosition()
         val level = bot.level() as net.minecraft.server.level.ServerLevel
