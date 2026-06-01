@@ -2,7 +2,7 @@ package com.maple.client
 
 import net.fabricmc.api.ClientModInitializer
 
-object MCMindClient : ClientModInitializer {
+object AnimaFabricClient : ClientModInitializer {
 	override fun onInitializeClient() {
 		// This entrypoint is suitable for setting up client-specific logic, such as rendering.
 	}

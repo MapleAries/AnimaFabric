@@ -7,7 +7,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 @Serializable
-data class MCMindConfig(
+data class AnimaFabricConfig(
     val apiUrl: String = "https://api.deepseek.com/chat/completions",
     val apiKey: String = "",
     val model: String = "deepseek-chat",
@@ -16,20 +16,20 @@ data class MCMindConfig(
     val maxHistoryTurns: Int = 10
 ) {
     companion object {
-        private val CONFIG_PATH: Path = FabricLoader.getInstance().configDir.resolve("mc-mind.json")
+        private val CONFIG_PATH: Path = FabricLoader.getInstance().configDir.resolve("anima-fabric.json")
         private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
-        fun load(): MCMindConfig {
+        fun load(): AnimaFabricConfig {
             return try {
                 if (Files.exists(CONFIG_PATH)) {
-                    json.decodeFromString<MCMindConfig>(Files.readString(CONFIG_PATH))
+                    json.decodeFromString<AnimaFabricConfig>(Files.readString(CONFIG_PATH))
                 } else {
-                    val default = MCMindConfig()
+                    val default = AnimaFabricConfig()
                     default.save()
                     default
                 }
             } catch (e: Exception) {
-                MCMindConfig()
+                AnimaFabricConfig()
             }
         }
     }

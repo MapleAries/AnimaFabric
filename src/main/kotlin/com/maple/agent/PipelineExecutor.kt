@@ -48,7 +48,7 @@ class PipelineExecutor(
 
         // 4. 记录思考内容到控制台
         if (llmResponse.thinking.isNotBlank()) {
-            println("[MC-Mind] LLM thinking: ${llmResponse.thinking.take(200)}...")
+            println("[AnimaFabric] LLM thinking: ${llmResponse.thinking.take(200)}...")
         }
 
         // 5. 检查实际输出
@@ -56,7 +56,7 @@ class PipelineExecutor(
             return "LLM returned no content, please try again."
         }
 
-        println("[MC-Mind] LLM output: ${llmResponse.content}")
+        println("[AnimaFabric] LLM output: ${llmResponse.content}")
 
         // 6. 解析响应
         val parsed = parseResponse(llmResponse.content)

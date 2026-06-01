@@ -1,43 +1,43 @@
 {
 	"schemaVersion": 1,
-	"id": "mc-mind",
+	"id": "anima-fabric",
 	"version": "${version}",
-	"name": "MC-Mind",
+	"name": "织灵 (AnimaFabric)",
 	"description": "AI-powered NPC companion mod. Send natural language commands to AI bots.",
 	"authors": [
-		"Me!"
+		"Maple"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/",
+		"sources": "https://github.com/"
 	},
 	"license": "CC0-1.0",
-	"icon": "assets/mc-mind/icon.png",
+	"icon": "assets/anima-fabric/icon.png",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
 			{
-				"value": "com.maple.MCMind",
+				"value": "com.maple.AnimaFabric",
 				"adapter": "kotlin"
 			}
 		],
 		"client": [
 			{
-				"value": "com.maple.client.MCMindClient",
+				"value": "com.maple.client.AnimaFabricClient",
 				"adapter": "kotlin"
 			}
 		],
 		"fabric-datagen": [
 			{
-				"value": "com.maple.client.MCMindDataGenerator",
+				"value": "com.maple.client.AnimaFabricDataGenerator",
 				"adapter": "kotlin"
 			}
 		]
 	},
 	"mixins": [
-		"mc-mind.mixins.json",
+		"anima-fabric.mixins.json",
 		{
-			"config": "mc-mind.client.mixins.json",
+			"config": "anima-fabric.client.mixins.json",
 			"environment": "client"
 		}
 	],

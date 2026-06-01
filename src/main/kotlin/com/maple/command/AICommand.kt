@@ -1,7 +1,7 @@
 package com.maple.command
 
 import com.maple.agent.AgentController
-import com.maple.config.MCMindConfig
+import com.maple.config.AnimaFabricConfig
 import com.maple.entity.FakePlayerManager
 import com.mojang.brigadier.Command
 import com.mojang.brigadier.arguments.StringArgumentType
@@ -18,13 +18,13 @@ import net.minecraft.network.chat.Component
 object AICommand {
 
     private var controller: AgentController? = null
-    private var config: MCMindConfig? = null
+    private var config: AnimaFabricConfig? = null
 
     fun setController(ctrl: AgentController) {
         controller = ctrl
     }
 
-    fun setConfig(cfg: MCMindConfig) {
+    fun setConfig(cfg: AnimaFabricConfig) {
         config = cfg
     }
 
@@ -166,7 +166,7 @@ object AICommand {
         }
         context.source.sendSuccess({
             Component.literal("""
-                === MC-Mind 配置 ===
+                === 织灵配置 ===
                 API URL: ${cfg.apiUrl}
                 API Key: ${cfg.apiKey.take(8)}...${cfg.apiKey.takeLast(4)}
                 模型: ${cfg.model}
@@ -214,7 +214,7 @@ object AICommand {
         return Command.SINGLE_SUCCESS
     }
 
-    private fun updateConfig(newConfig: MCMindConfig) {
+    private fun updateConfig(newConfig: AnimaFabricConfig) {
         config = newConfig
     }
 }

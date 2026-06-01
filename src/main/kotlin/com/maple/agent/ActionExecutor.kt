@@ -37,14 +37,14 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
     private fun executeCarpetCommand(command: String): Boolean {
         return try {
             val fullCommand = "/player $botName $command"
-            println("[MC-Mind] 执行 carpet 命令: $fullCommand")
+            println("[AnimaFabric] 执行 carpet 命令: $fullCommand")
 
             val commandManager = server.getCommands()
             val source = server.createCommandSourceStack()
             commandManager.performPrefixedCommand(source, fullCommand)
             true
         } catch (e: Exception) {
-            println("[MC-Mind] carpet 命令执行异常: ${e.message}")
+            println("[AnimaFabric] carpet 命令执行异常: ${e.message}")
             false
         }
     }
@@ -104,7 +104,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
         val startPos = bot.position()
 
-        println("[MC-Mind] Bot 位置: (${startPos.x}, ${startPos.y}, ${startPos.z}), 方向: $direction, 距离: $distance")
+        println("[AnimaFabric] Bot 位置: (${startPos.x}, ${startPos.y}, ${startPos.z}), 方向: $direction, 距离: $distance")
 
         // 支持多种方向格式
         val carpetDirection = when (direction.lowercase()) {
@@ -117,7 +117,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
 
         // 开始移动
         executeCarpetCommand("move $carpetDirection")
-        println("[MC-Mind] 开始移动: move $carpetDirection")
+        println("[AnimaFabric] 开始移动: move $carpetDirection")
 
         // 等待移动完成（行走速度约 4.317 格/秒，每格约 232ms）
         val waitTime = (distance * 250L).coerceAtMost(5000L) // 每格 250ms，最多 5 秒
@@ -125,7 +125,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
 
         // 停止移动
         executeCarpetCommand("stop")
-        println("[MC-Mind] 停止移动")
+        println("[AnimaFabric] 停止移动")
 
         // 获取移动后的位置
         val endPos = bot.position()
@@ -203,7 +203,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             // 距离检查：最大触及距离为 5.0 格
             val distance = eyePos.distanceTo(blockCenter)
             if (distance > 5.0) {
-                println("[MC-Mind] 挖掘校验失败：坐标 ($x, $y, $z) 距离太远 (${"%.2f".format(distance)}格，最大限制 5.0格)")
+                println("[AnimaFabric] 挖掘校验失败：坐标 ($x, $y, $z) 距离太远 (${"%.2f".format(distance)}格，最大限制 5.0格)")
                 return@runOnGameThread false
             }
 
@@ -239,7 +239,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         }
 
         if (!isSafeToMine) {
-            println("[MC-Mind] 挖掘终止：目标方块 ($x, $y, $z) 太远或被其他方块阻挡！")
+            println("[AnimaFabric] 挖掘终止：目标方块 ($x, $y, $z) 太远或被其他方块阻挡！")
             return "挖掘失败：方块太远或视线被阻挡，请先移动到该方块附近。"
         }
 
@@ -350,7 +350,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
                 "/say [$botName] $message"
             )
         } catch (e: Exception) {
-            println("[MC-Mind] 发送消息失败: ${e.message}")
+            println("[AnimaFabric] 发送消息失败: ${e.message}")
         }
         return "已发送消息"
     }

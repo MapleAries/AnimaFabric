@@ -14,4 +14,4 @@ pluginManagement {
 }
 
 // Should match your modid
-rootProject.name = "mc-mind"
+rootProject.name = "anima-fabric"

@@ -222,11 +222,11 @@ class SimpleCommandExecutor(
     private fun executeCarpetCommand(command: String): Boolean {
         return try {
             val fullCommand = "/player $botName $command"
-            println("[MC-Mind] 执行简单指令: $fullCommand")
+            println("[AnimaFabric] 执行简单指令: $fullCommand")
             server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), fullCommand)
             true
         } catch (e: Exception) {
-            println("[MC-Mind] 指令执行异常: ${e.message}")
+            println("[AnimaFabric] 指令执行异常: ${e.message}")
             false
         }
     }
@@ -239,7 +239,7 @@ class SimpleCommandExecutor(
 
         return try {
             val fullCommand = if (command.startsWith("/")) command else "/$command"
-            println("[MC-Mind] 执行直接指令: $fullCommand")
+            println("[AnimaFabric] 执行直接指令: $fullCommand")
 
             server.getCommands().performPrefixedCommand(
                 server.createCommandSourceStack(),

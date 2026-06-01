@@ -50,7 +50,7 @@ class FakePlayer(
          * 创建假玩家。
          */
         fun create(level: ServerLevel, name: String, x: Double, y: Double, z: Double): FakePlayer {
-            val uuid = UUID.nameUUIDFromBytes("MC-Mind:$name".toByteArray())
+            val uuid = UUID.nameUUIDFromBytes("AnimaFabric:$name".toByteArray())
             val profile = GameProfile(uuid, "[AI] $name")
             val fakePlayer = FakePlayer(level, profile)
 

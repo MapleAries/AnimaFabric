@@ -1,6 +1,6 @@
 package com.maple.agent
 
-import com.maple.config.MCMindConfig
+import com.maple.config.AnimaFabricConfig
 import com.maple.entity.FakePlayerManager
 import com.maple.llm.LLMClient
 import kotlinx.coroutines.*
@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
  * 主控制器：接收指令 → 判断类型 → 分发到简单执行器或 LLM 规划器。
  * 控制 carpet 生成的假人，不再自己生成。
  */
-class AgentController(private val config: MCMindConfig, private val server: MinecraftServer) {
+class AgentController(private val config: AnimaFabricConfig, private val server: MinecraftServer) {
 
     private val llmClient = LLMClient(config)
     private val memories = ConcurrentHashMap<String, ConversationMemory>()
@@ -64,13 +64,13 @@ class AgentController(private val config: MCMindConfig, private val server: Mine
                 val result = when (commandType) {
                     is CommandRouter.CommandType.Simple -> {
                         // 简单指令：直接执行
-                        println("[MC-Mind] 简单指令: ${commandType.action}")
+                        println("[AnimaFabric] 简单指令: ${commandType.action}")
                         val executor = SimpleCommandExecutor(botName, server)
                         executor.execute(commandType.action, commandType.groups)
                     }
                     is CommandRouter.CommandType.Complex -> {
                         // 复杂指令：LLM 规划
-                        println("[MC-Mind] 复杂指令，交给 LLM 规划")
+                        println("[AnimaFabric] 复杂指令，交给 LLM 规划")
                         val memory = memories[botName]!!
                         val actionExecutor = ActionExecutor(botName, server)
                         val pipelineExecutor = PipelineExecutor(botName, server, llmClient, memory, actionExecutor)

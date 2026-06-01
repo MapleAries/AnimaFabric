@@ -1,6 +1,6 @@
 package com.maple.llm
 
-import com.maple.config.MCMindConfig
+import com.maple.config.AnimaFabricConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -19,9 +19,9 @@ data class LLMResponse(
     val content: String    // 实际输出（content）
 )
 
-class LLMClient(private val config: MCMindConfig) {
+class LLMClient(private val config: AnimaFabricConfig) {
 
-    private val logger = LoggerFactory.getLogger("mc-mind")
+    private val logger = LoggerFactory.getLogger("anima-fabric")
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(config.timeout))
         .build()
@@ -50,7 +50,7 @@ class LLMClient(private val config: MCMindConfig) {
             )
 
             val requestBody = json.encodeToString(request)
-            logger.info("[MC-Mind] 发送 LLM 请求: URL={}, Model={}", config.apiUrl, config.model)
+            logger.info("[AnimaFabric] 发送 LLM 请求: URL={}, Model={}", config.apiUrl, config.model)
 
             val httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(config.apiUrl))
@@ -62,11 +62,11 @@ class LLMClient(private val config: MCMindConfig) {
 
             val response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofLines())
 
-            logger.info("[MC-Mind] LLM 响应状态码: {}", response.statusCode())
+            logger.info("[AnimaFabric] LLM 响应状态码: {}", response.statusCode())
 
             if (response.statusCode() != 200) {
                 val errorBody = response.body().collect(java.util.stream.Collectors.joining("\n"))
-                logger.error("[MC-Mind] LLM 请求失败: 状态码={}, 响应={}", response.statusCode(), errorBody)
+                logger.error("[AnimaFabric] LLM 请求失败: 状态码={}, 响应={}", response.statusCode(), errorBody)
                 return@withContext LLMResponse("", "")
             }
 
@@ -97,14 +97,14 @@ class LLMClient(private val config: MCMindConfig) {
                 }
             }
 
-            logger.info("[MC-Mind] LLM 响应完成 - 思考: {}字, 内容: {}字", thinkingBuilder.length, contentBuilder.length)
+            logger.info("[AnimaFabric] LLM 响应完成 - 思考: {}字, 内容: {}字", thinkingBuilder.length, contentBuilder.length)
 
             // 处理响应内容
             val finalContent = processResponse(thinkingBuilder.toString(), contentBuilder.toString())
 
             LLMResponse(thinkingBuilder.toString(), finalContent)
         } catch (e: Exception) {
-            logger.error("[MC-Mind] LLM 请求异常: {}", e.message, e)
+            logger.error("[AnimaFabric] LLM 请求异常: {}", e.message, e)
             LLMResponse("", "")
         }
     }
@@ -124,7 +124,7 @@ class LLMClient(private val config: MCMindConfig) {
 
         // 如果只有思考内容，从中提取 JSON
         if (thinking.isNotBlank()) {
-            logger.info("[MC-Mind] 只有思考内容，尝试从中提取 JSON")
+            logger.info("[AnimaFabric] 只有思考内容，尝试从中提取 JSON")
             return extractJsonFromThinking(thinking)
         }
 
@@ -144,12 +144,12 @@ class LLMClient(private val config: MCMindConfig) {
         val lastBrace = cleaned.lastIndexOf('}')
 
         if (firstBrace == -1 || lastBrace == -1 || firstBrace >= lastBrace) {
-            logger.warn("[MC-Mind] 未找到有效的 JSON")
+            logger.warn("[AnimaFabric] 未找到有效的 JSON")
             return ""
         }
 
         val jsonStr = cleaned.substring(firstBrace, lastBrace + 1)
-        logger.info("[MC-Mind] 提取的 JSON: {}", jsonStr.take(200))
+        logger.info("[AnimaFabric] 提取的 JSON: {}", jsonStr.take(200))
         return jsonStr
     }
 
@@ -180,7 +180,7 @@ class LLMClient(private val config: MCMindConfig) {
                 val jsonStr = thinking.substring(start, lastBrace + 1)
                 // 验证是否包含 tool 或 pipeline
                 if (jsonStr.contains("\"tool\"") || jsonStr.contains("\"pipeline\"")) {
-                    logger.info("[MC-Mind] 从思考内容提取的 JSON: {}", jsonStr.take(200))
+                    logger.info("[AnimaFabric] 从思考内容提取的 JSON: {}", jsonStr.take(200))
                     return jsonStr
                 }
             }
@@ -190,7 +190,7 @@ class LLMClient(private val config: MCMindConfig) {
         val jsonPattern = Regex("""\{[\s\S]*"tool"[\s\S]*\}""")
         val match = jsonPattern.find(thinking)
         if (match != null) {
-            logger.info("[MC-Mind] 用正则提取的 JSON: {}", match.value.take(200))
+            logger.info("[AnimaFabric] 用正则提取的 JSON: {}", match.value.take(200))
             return match.value
         }
 
@@ -198,11 +198,11 @@ class LLMClient(private val config: MCMindConfig) {
         val pipelinePattern = Regex("""\{[\s\S]*"pipeline"[\s\S]*\}""")
         val pipelineMatch = pipelinePattern.find(thinking)
         if (pipelineMatch != null) {
-            logger.info("[MC-Mind] 用正则提取的 pipeline JSON: {}", pipelineMatch.value.take(200))
+            logger.info("[AnimaFabric] 用正则提取的 pipeline JSON: {}", pipelineMatch.value.take(200))
             return pipelineMatch.value
         }
 
-        logger.warn("[MC-Mind] 无法从思考内容中提取 JSON")
+        logger.warn("[AnimaFabric] 无法从思考内容中提取 JSON")
         return ""
     }
 }

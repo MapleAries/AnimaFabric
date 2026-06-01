@@ -63,7 +63,7 @@ class BehaviorModes(private val botName: String, private val server: net.minecra
 
         // 低血量或危险状态
         if (health < 6 || isBurning || isInLava || isDrowning) {
-            println("[MC-Mind] Behavior: Self-preservation triggered (health=$health, burning=$isBurning, lava=$isInLava, drowning=$isDrowning)")
+            println("[AnimaFabric] Behavior: Self-preservation triggered (health=$health, burning=$isBurning, lava=$isInLava, drowning=$isDrowning)")
             // 尝试逃离
             executeCarpetCommand(bot, "move forward")
             executeCarpetCommand(bot, "jump")
@@ -84,7 +84,7 @@ class BehaviorModes(private val botName: String, private val server: net.minecra
             if (distance < 0.1) {
                 stuckTicks++
                 if (stuckTicks > 60) { // 3秒没动
-                    println("[MC-Mind] Behavior: Unstuck triggered (stuck for ${stuckTicks * 50}ms)")
+                    println("[AnimaFabric] Behavior: Unstuck triggered (stuck for ${stuckTicks * 50}ms)")
                     // 尝试跳跃和移动
                     executeCarpetCommand(bot, "jump")
                     executeCarpetCommand(bot, "move forward")
@@ -112,7 +112,7 @@ class BehaviorModes(private val botName: String, private val server: net.minecra
         if (hostileEntities.isNotEmpty()) {
             val nearest = hostileEntities.minByOrNull { it.distanceTo(bot) }
             if (nearest != null) {
-                println("[MC-Mind] Behavior: Self-defense triggered (attacking ${nearest.name.string})")
+                println("[AnimaFabric] Behavior: Self-defense triggered (attacking ${nearest.name.string})")
                 // 看向敌人并攻击
                 executeCarpetCommand(bot, "look at ${nearest.blockPosition().x} ${nearest.blockPosition().y} ${nearest.blockPosition().z}")
                 executeCarpetCommand(bot, "attack continuous")
