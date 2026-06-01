@@ -192,14 +192,65 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val y = getIntParam(params, "y") ?: return "缺少参数 y"
         val z = getIntParam(params, "z") ?: return "缺少参数 z"
 
-        // 先看向方块
+        val targetPos = net.minecraft.core.BlockPos(x, y, z)
+
+        // 1. 安全预校验：检查距离和视线阻挡，防止误挖其他方块或越界悬空攻击
+        val isSafeToMine = GameThreadDispatcher.runOnGameThread(server) {
+            val botPlayer = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread false
+            val eyePos = botPlayer.eyePosition
+            val blockCenter = net.minecraft.world.phys.Vec3.atCenterOf(targetPos)
+
+            // 距离检查：最大触及距离为 5.0 格
+            val distance = eyePos.distanceTo(blockCenter)
+            if (distance > 5.0) {
+                println("[MC-Mind] 挖掘校验失败：坐标 ($x, $y, $z) 距离太远 (${"%.2f".format(distance)}格，最大限制 5.0格)")
+                return@runOnGameThread false
+            }
+
+            // 计算视线角度以进行射线检测
+            val dx = blockCenter.x - eyePos.x
+            val dy = blockCenter.y - eyePos.y
+            val dz = blockCenter.z - eyePos.z
+            val xzDist = Math.sqrt(dx * dx + dz * dz)
+            val yaw = Math.toDegrees(Math.atan2(-dx, dz)).toFloat()
+            val pitch = Math.toDegrees(Math.atan2(-dy, xzDist)).toFloat()
+
+            // 暂存原视角
+            val originalYaw = botPlayer.yRot
+            val originalPitch = botPlayer.xRot
+
+            // 临时设置视角以进行射线撞击计算
+            botPlayer.yRot = yaw
+            botPlayer.xRot = pitch
+
+            val hitResult = botPlayer.pick(5.0, 1.0f, false)
+            val isSafe = if (hitResult.type == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                val blockHit = hitResult as net.minecraft.world.phys.BlockHitResult
+                blockHit.blockPos == targetPos
+            } else {
+                false
+            }
+
+            // 还原视角
+            botPlayer.yRot = originalYaw
+            botPlayer.xRot = originalPitch
+
+            isSafe
+        }
+
+        if (!isSafeToMine) {
+            println("[MC-Mind] 挖掘终止：目标方块 ($x, $y, $z) 太远或被其他方块阻挡！")
+            return "挖掘失败：方块太远或视线被阻挡，请先移动到该方块附近。"
+        }
+
+        // 2. 正式开始挖掘
+        // 看向方块
         executeCarpetCommand("look at $x $y $z")
 
         // 开始挖掘
         executeCarpetCommand("attack continuous")
 
-        // 循环检测，直到方块被破坏（变成空气）或超时
-        val targetPos = net.minecraft.core.BlockPos(x, y, z)
+        // 3. 动态监测方块状态，一旦破坏立即刹车
         var ticks = 0
         val maxTicks = 100 // 最多等待 5 秒 (50 * 100ms)
         while (ticks < maxTicks) {
