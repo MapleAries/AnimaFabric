@@ -156,35 +156,53 @@ class LLMClient(private val config: MCMindConfig) {
     /**
      * 从思考内容中提取 JSON。
      * 某些模型（如 deepseek-v4-flash）只返回 reasoning_content。
+     * 尝试多种方式提取 JSON。
      */
     private fun extractJsonFromThinking(thinking: String): String {
-        // 找最后一个完整的 JSON 对象
+        // 方式1：找最后一个完整的 JSON 对象（包含 pipeline 或 tool）
         val lastBrace = thinking.lastIndexOf('}')
-        if (lastBrace == -1) return ""
-
-        // 向前找匹配的 {
-        var braceCount = 0
-        var start = lastBrace
-        for (i in lastBrace downTo 0) {
-            when (thinking[i]) {
-                '}' -> braceCount++
-                '{' -> braceCount--
+        if (lastBrace != -1) {
+            // 向前找匹配的 {
+            var braceCount = 0
+            var start = lastBrace
+            for (i in lastBrace downTo 0) {
+                when (thinking[i]) {
+                    '}' -> braceCount++
+                    '{' -> braceCount--
+                }
+                if (braceCount == 0) {
+                    start = i
+                    break
+                }
             }
+
             if (braceCount == 0) {
-                start = i
-                break
+                val jsonStr = thinking.substring(start, lastBrace + 1)
+                // 验证是否包含 tool 或 pipeline
+                if (jsonStr.contains("\"tool\"") || jsonStr.contains("\"pipeline\"")) {
+                    logger.info("[MC-Mind] 从思考内容提取的 JSON: {}", jsonStr.take(200))
+                    return jsonStr
+                }
             }
         }
 
-        if (braceCount != 0) {
-            // 如果没有找到匹配的 {，使用简单方式
-            val firstBrace = thinking.indexOf('{')
-            if (firstBrace == -1) return ""
-            start = firstBrace
+        // 方式2：用正则找 JSON 对象
+        val jsonPattern = Regex("""\{[\s\S]*"tool"[\s\S]*\}""")
+        val match = jsonPattern.find(thinking)
+        if (match != null) {
+            logger.info("[MC-Mind] 用正则提取的 JSON: {}", match.value.take(200))
+            return match.value
         }
 
-        val jsonStr = thinking.substring(start, lastBrace + 1)
-        logger.info("[MC-Mind] 从思考内容提取的 JSON: {}", jsonStr.take(200))
-        return jsonStr
+        // 方式3：找 pipeline 对象
+        val pipelinePattern = Regex("""\{[\s\S]*"pipeline"[\s\S]*\}""")
+        val pipelineMatch = pipelinePattern.find(thinking)
+        if (pipelineMatch != null) {
+            logger.info("[MC-Mind] 用正则提取的 pipeline JSON: {}", pipelineMatch.value.take(200))
+            return pipelineMatch.value
+        }
+
+        logger.warn("[MC-Mind] 无法从思考内容中提取 JSON")
+        return ""
     }
 }
