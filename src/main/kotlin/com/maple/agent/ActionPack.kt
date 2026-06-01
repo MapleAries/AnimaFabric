@@ -123,6 +123,79 @@ class ActionPack {
 
     fun isIdle(): Boolean = actions.isEmpty() && forward == 0f && strafing == 0f
 
+    // ========== 高层控制接口 ==========
+
+    /**
+     * 设置移动输入。
+     * @param fwd 前进值（正=前，负=后）
+     * @param strafe 横移值（正=右，负=左）
+     * @param sprint 是否冲刺
+     */
+    fun setMovement(fwd: Float, strafe: Float, sprint: Boolean = false) {
+        forward = fwd
+        strafing = strafe
+        sprinting = sprint
+    }
+
+    /**
+     * 停止移动。
+     */
+    fun stopMovement() {
+        forward = 0f
+        strafing = 0f
+        sprinting = false
+    }
+
+    /**
+     * 设置视角朝向（直接操作 player 的旋转）。
+     */
+    fun lookAt(player: ServerPlayer, yaw: Float, pitch: Float) {
+        player.yRot = yaw
+        player.xRot = pitch
+    }
+
+    /**
+     * 看向指定方块坐标。
+     */
+    fun lookAtBlock(player: ServerPlayer, pos: BlockPos) {
+        val eyePos = player.eyePosition
+        val blockCenter = net.minecraft.world.phys.Vec3.atCenterOf(pos)
+        val dx = blockCenter.x - eyePos.x
+        val dy = blockCenter.y - eyePos.y
+        val dz = blockCenter.z - eyePos.z
+        val xzDist = kotlin.math.sqrt(dx * dx + dz * dz)
+        val yaw = Math.toDegrees(kotlin.math.atan2(-dx, dz)).toFloat()
+        val pitch = Math.toDegrees(kotlin.math.atan2(-dy, xzDist)).toFloat()
+        lookAt(player, yaw, pitch)
+    }
+
+    /**
+     * 相对转向。
+     */
+    fun turn(player: ServerPlayer, direction: String) {
+        val delta = when (direction.lowercase()) {
+            "left" -> -90f
+            "right" -> 90f
+            "back" -> 180f
+            else -> 0f
+        }
+        player.yRot = (player.yRot + delta) % 360f
+    }
+
+    /**
+     * 开始持续动作（攻击/使用等）。
+     */
+    fun startContinuous(type: ActionType) {
+        start(type, Action.continuous(type))
+    }
+
+    /**
+     * 停止持续动作。
+     */
+    fun stopContinuous(type: ActionType) {
+        stop(type)
+    }
+
     private fun executeAction(player: ServerPlayer, type: ActionType) {
         when (type) {
             ActionType.ATTACK -> executeAttack(player)
