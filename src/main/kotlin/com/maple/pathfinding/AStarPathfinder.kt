@@ -2,23 +2,40 @@ package com.maple.pathfinding
 
 import net.minecraft.core.BlockPos
 import net.minecraft.world.level.Level
-import net.minecraft.world.level.block.state.BlockState
 import java.util.PriorityQueue
 import kotlin.math.abs
-import kotlin.math.sqrt
 
 /**
- * A* 寻路算法，基于方块网格。
+ * 增强版 A* 寻路算法。
+ * 支持多种移动类型（水平、对角、上升、下降、掉落、垂直），
+ * 使用基于 Minecraft 物理的精确代价模型。
+ *
+ * 改进点（参考 Baritone）：
+ * - 多种移动类型（18 种 vs 原来 4 种）
+ * - tick 精确代价模型
+ * - 超时机制替代迭代限制
+ * - 多系数路径跟踪（返回次优路径）
  */
 object AStarPathfinder {
 
-    private const val MAX_ITERATIONS = 1000
+    /** 主搜索超时（毫秒） */
+    private const val PRIMARY_TIMEOUT_MS = 3000L
+
+    /** 失败搜索超时（毫秒） */
+    private const val FAILURE_TIMEOUT_MS = 5000L
+
+    /** 最短路径长度 */
+    private const val MIN_PATH_LENGTH = 3
+
+    /** 多系数跟踪的系数数组 */
+    private val COEFFICIENTS = doubleArrayOf(1.5, 2.0, 2.5, 3.0, 4.0, 5.0)
 
     data class PathNode(
         val pos: BlockPos,
-        val g: Double,  // 从起点到当前的实际代价
-        val h: Double,  // 启发式估计（到终点的直线距离）
-        val parent: PathNode? = null
+        val g: Double,        // 从起点到当前的实际代价
+        val h: Double,        // 启发式估计（到终点的直线距离）
+        val parent: PathNode? = null,
+        val moveType: MovementType? = null  // 到达此节点的移动类型
     ) : Comparable<PathNode> {
         val f: Double get() = g + h
         override fun compareTo(other: PathNode): Int = f.compareTo(other.f)
@@ -30,123 +47,165 @@ object AStarPathfinder {
      */
     fun findPath(level: Level, start: BlockPos, end: BlockPos): List<BlockPos> {
         if (start == end) return listOf(start)
-        if (!isWalkable(level, end)) return emptyList()
+        if (!MovementCostCalculator.canWalkAt(level, end)) return emptyList()
 
+        val startTime = System.currentTimeMillis()
         val openSet = PriorityQueue<PathNode>()
-        val closedSet = mutableSetOf<BlockPos>()
-        val gScores = mutableMapOf<BlockPos, Double>()
+        val closedSet = mutableSetOf<Long>() // 使用 long hash 优化
+        val gScores = mutableMapOf<Long, Double>()
+
+        // 多系数最佳路径跟踪
+        val bestPaths = arrayOfNulls<PathNode>(COEFFICIENTS.size)
 
         val startNode = PathNode(start, 0.0, heuristic(start, end))
         openSet.add(startNode)
-        gScores[start] = 0.0
+        gScores[posHash(start)] = 0.0
 
-        var iterations = 0
+        while (openSet.isNotEmpty()) {
+            // 超时检查
+            val elapsed = System.currentTimeMillis() - startTime
+            if (elapsed > PRIMARY_TIMEOUT_MS) {
+                // 尝试返回已找到的最佳路径
+                val bestPath = getBestPath(bestPaths)
+                if (bestPath != null) return bestPath
+                if (elapsed > FAILURE_TIMEOUT_MS) return emptyList()
+            }
 
-        while (openSet.isNotEmpty() && iterations < MAX_ITERATIONS) {
-            iterations++
             val current = openSet.poll()
+            val currentHash = posHash(current.pos)
 
             if (current.pos == end) {
                 return reconstructPath(current)
             }
 
-            if (current.pos in closedSet) continue
-            closedSet.add(current.pos)
+            if (currentHash in closedSet) continue
+            closedSet.add(currentHash)
 
-            for (neighbor in getNeighbors(level, current.pos)) {
-                if (neighbor in closedSet) continue
+            // 更新多系数最佳路径
+            updateBestPaths(bestPaths, current, end)
 
-                val moveCost = getMoveCost(current.pos, neighbor)
+            // 扩展所有可能的移动
+            for (move in MovementType.ALL) {
+                val targetPos = getTargetPos(current.pos, move) ?: continue
+                val targetHash = posHash(targetPos)
+
+                if (targetHash in closedSet) continue
+
+                // 计算移动代价
+                val moveCost = calculateMoveCost(level, current.pos, move)
+                if (moveCost >= ActionCosts.COST_INF) continue
+
                 val tentativeG = current.g + moveCost
+                val existingG = gScores[targetHash]
 
-                val existingG = gScores[neighbor]
                 if (existingG != null && tentativeG >= existingG) continue
 
-                gScores[neighbor] = tentativeG
-                val node = PathNode(neighbor, tentativeG, heuristic(neighbor, end), current)
+                gScores[targetHash] = tentativeG
+                val node = PathNode(
+                    targetPos,
+                    tentativeG,
+                    heuristic(targetPos, end),
+                    current,
+                    move
+                )
                 openSet.add(node)
             }
         }
 
-        return emptyList() // 找不到路径
-    }
-
-    private fun heuristic(a: BlockPos, b: BlockPos): Double {
-        val dx = abs(a.x - b.x).toDouble()
-        val dy = abs(a.y - b.y).toDouble()
-        val dz = abs(a.z - b.z).toDouble()
-        return dx + dy + dz // 曼哈顿距离
-    }
-
-    private fun getNeighbors(level: Level, pos: BlockPos): List<BlockPos> {
-        val neighbors = mutableListOf<BlockPos>()
-
-        // 4 个水平方向
-        val directions = listOf(
-            pos.north(), pos.south(), pos.east(), pos.west()
-        )
-
-        for (dir in directions) {
-            // 检查是否可以走上去（高度差 0 或 1）
-            val ground = findGround(level, dir)
-            if (ground != null) {
-                neighbors.add(ground)
-            }
-        }
-
-        return neighbors
+        // 开集为空，尝试返回次优路径
+        return getBestPath(bestPaths) ?: emptyList()
     }
 
     /**
-     * 找到从指定位置开始的可行走地面。
-     * 检查当前位置和上方一格。
+     * 计算指定移动的代价。
      */
-    private fun findGround(level: Level, pos: BlockPos): BlockPos? {
-        // 检查 pos 本身是否可行走（脚下是固体，头部是非固体）
-        if (isWalkableAt(level, pos)) return pos
+    private fun calculateMoveCost(level: Level, from: BlockPos, move: MovementType): Double {
+        return when (move) {
+            // 水平移动
+            MovementType.NORTH, MovementType.SOUTH,
+            MovementType.EAST, MovementType.WEST ->
+                MovementCostCalculator.horizontalCost(level, from, move, canSprint = true)
 
-        // 检查上方一格（爬坡）
-        val up = pos.above()
-        if (isWalkableAt(level, up)) return up
+            // 对角移动
+            MovementType.NORTH_EAST, MovementType.NORTH_WEST,
+            MovementType.SOUTH_EAST, MovementType.SOUTH_WEST ->
+                MovementCostCalculator.horizontalCost(level, from, move, canSprint = true)
 
-        // 检查下方一格（下坡）
-        val down = pos.below()
-        if (isWalkableAt(level, down)) return down
+            // 上升移动
+            MovementType.ASCEND_NORTH, MovementType.ASCEND_SOUTH,
+            MovementType.ASCEND_EAST, MovementType.ASCEND_WEST ->
+                MovementCostCalculator.ascendCost(level, from, move)
 
+            // 下降移动（动态掉落）
+            MovementType.DESCEND_NORTH, MovementType.DESCEND_SOUTH,
+            MovementType.DESCEND_EAST, MovementType.DESCEND_WEST ->
+                MovementCostCalculator.descendCost(level, from, move)
+
+            // 垂直移动
+            MovementType.PILLAR -> MovementCostCalculator.pillarCost(level, from)
+            MovementType.DOWNWARD -> MovementCostCalculator.downwardCost(level, from)
+        }
+    }
+
+    /**
+     * 获取移动的目标位置。
+     * 对于动态移动（如掉落），返回 null（需要特殊处理）。
+     */
+    private fun getTargetPos(from: BlockPos, move: MovementType): BlockPos? {
+        if (move.dynamicY) {
+            // 动态移动，返回名义目标（实际由 cost 函数处理）
+            return from.offset(move.dx, move.dy, move.dz)
+        }
+        return from.offset(move.dx, move.dy, move.dz)
+    }
+
+    /**
+     * 启发式函数：使用 3D 欧几里得距离。
+     */
+    private fun heuristic(a: BlockPos, b: BlockPos): Double {
+        val dx = (a.x - b.x).toDouble()
+        val dy = (a.y - b.y).toDouble()
+        val dz = (a.z - b.z).toDouble()
+        return kotlin.math.sqrt(dx * dx + dy * dy + dz * dz)
+    }
+
+    /**
+     * 将 BlockPos 编码为 long 用于高效存储。
+     */
+    private fun posHash(pos: BlockPos): Long {
+        return (pos.x.toLong() shl 32) or (pos.z.toLong() and 0xFFFFFFFFL) or (pos.y.toLong() shl 16)
+    }
+
+    /**
+     * 更新多系数最佳路径跟踪。
+     */
+    private fun updateBestPaths(bestPaths: Array<PathNode?>, node: PathNode, end: BlockPos) {
+        val h = heuristic(node.pos, end)
+        for (i in COEFFICIENTS.indices) {
+            val metric = h + node.g / COEFFICIENTS[i]
+            val current = bestPaths[i]
+            if (current == null || metric < heuristic(current.pos, end) + current.g / COEFFICIENTS[i]) {
+                bestPaths[i] = node
+            }
+        }
+    }
+
+    /**
+     * 从多系数跟踪中获取最佳路径。
+     */
+    private fun getBestPath(bestPaths: Array<PathNode?>): List<BlockPos>? {
+        for (node in bestPaths) {
+            if (node != null) {
+                val path = reconstructPath(node)
+                if (path.size >= MIN_PATH_LENGTH) return path
+            }
+        }
         return null
     }
 
     /**
-     * 检查指定位置是否可行走：
-     * - 脚下（pos-1）是固体方块
-     * - 脚部（pos）是非固体方块
-     * - 头部（pos+1）是非固体方块
+     * 从节点链重建路径。
      */
-    private fun isWalkableAt(level: Level, pos: BlockPos): Boolean {
-        val below = level.getBlockState(pos.below())
-        val feet = level.getBlockState(pos)
-        val head = level.getBlockState(pos.above())
-
-        return below.isSolidRender &&
-               !feet.isSolidRender &&
-               !head.isSolidRender &&
-               !isDangerous(feet)
-    }
-
-    private fun isWalkable(level: Level, pos: BlockPos): Boolean {
-        return isWalkableAt(level, pos)
-    }
-
-    private fun isDangerous(state: BlockState): Boolean {
-        val name = state.block.name.string.lowercase()
-        return "lava" in name || "fire" in name || "cactus" in name || "magma" in name
-    }
-
-    private fun getMoveCost(from: BlockPos, to: BlockPos): Double {
-        val dy = abs(from.y - to.y)
-        return if (dy > 0) 1.5 else 1.0 // 上坡/下坡代价更高
-    }
-
     private fun reconstructPath(node: PathNode): List<BlockPos> {
         val path = mutableListOf<BlockPos>()
         var current: PathNode? = node
