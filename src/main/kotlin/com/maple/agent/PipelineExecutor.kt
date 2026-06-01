@@ -40,11 +40,9 @@ class PipelineExecutor(
         // 3. 调用 LLM（流式）
         val llmResponse = llmClient.chatStream(messages)
 
-        // 4. 处理思考内容（如果有）
+        // 4. 记录思考内容到控制台（不显示在游戏内）
         if (llmResponse.thinking.isNotBlank()) {
-            // 发送思考摘要给玩家
-            val thinkingSummary = summarizeThinking(llmResponse.thinking)
-            sendChatMessage("思考：$thinkingSummary")
+            println("[MC-Mind] LLM 思考过程: ${llmResponse.thinking.take(200)}...")
         }
 
         // 5. 检查实际输出
@@ -73,15 +71,6 @@ class PipelineExecutor(
                 parsed.message
             }
         }
-    }
-
-    /**
-     * 总结思考内容，提取关键信息。
-     */
-    private fun summarizeThinking(thinking: String): String {
-        // 取前 100 个字符作为摘要
-        val summary = thinking.take(100).trim()
-        return if (thinking.length > 100) "$summary..." else summary
     }
 
     /**
