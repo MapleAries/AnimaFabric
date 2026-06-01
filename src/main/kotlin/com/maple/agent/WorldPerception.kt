@@ -17,11 +17,12 @@ import kotlin.math.sin
 
 object WorldPerception {
 
-    // 重要方块列表
+    // 重要方块列表（使用显示名称，与 block.name.string 一致）
     private val IMPORTANT_BLOCKS = setOf(
-        "oak_log", "birch_log", "spruce_log", "jungle_log", "acacia_log", "dark_oak_log",
-        "stone", "cobblestone", "coal_ore", "iron_ore", "gold_ore", "diamond_ore",
-        "chest", "barrel", "crafting_table", "furnace"
+        "Oak Log", "Birch Log", "Spruce Log", "Jungle Log", "Acacia Log", "Dark Oak Log",
+        "Stone", "Cobblestone", "Coal Ore", "Iron Ore", "Gold Ore", "Diamond Ore",
+        "Chest", "Barrel", "Crafting Table", "Furnace",
+        "Oak Planks", "Birch Planks", "Spruce Planks"
     )
 
     fun scan(player: Player): String {
