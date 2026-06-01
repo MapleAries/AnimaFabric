@@ -80,7 +80,7 @@ class SimpleCommandExecutor(
         val targetPos = BlockPos(x, y, z)
 
         // 使用 A* 寻路
-        val level = fakePlayer.level() as net.minecraft.server.level.ServerLevel
+        val level = fakePlayer.level()
         val path = com.maple.pathfinding.AStarPathfinder.findPath(level, startPos, targetPos)
 
         if (path.isEmpty()) {
@@ -163,7 +163,7 @@ class SimpleCommandExecutor(
     private fun executeScanArea(): String {
         val bot = getServerPlayer() ?: return "Bot 不存在"
         val pos = bot.blockPosition()
-        val level = bot.level() as net.minecraft.server.level.ServerLevel
+        val level = bot.level()
 
         val blockCounts = mutableMapOf<String, Int>()
         for (dx in -5..5) {
@@ -201,7 +201,7 @@ class SimpleCommandExecutor(
     private suspend fun executeMineFront(): String {
         val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
         val pos = fakePlayer.blockPosition()
-        val level = fakePlayer.level() as net.minecraft.server.level.ServerLevel
+        val level = fakePlayer.level()
 
         // 根据朝向获取面前 1 格的方块
         val yaw = fakePlayer.yRot

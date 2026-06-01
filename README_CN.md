@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-一个 Minecraft Fabric Mod，让大语言模型（LLM）驱动的 AI 智能体进入你的游戏。通过 `/ai` 命令发送自然语言指令，AI 假人会自动执行——挖矿、建造、战斗、寻路，样样都行。
+一个 Minecraft Fabric Mod，让大语言模型（LLM）驱动的 AI 智能体进入你的游戏。通过 `/ai` 命令发送自然语言指令，AI 假人会自动执行——挖矿、建造、战斗、寻路，样样都行。**无外部依赖**——通过 Mixin 直接控制假人，达到 20 TPS 的同步精度。
 
 ## 特性
 
@@ -13,6 +13,7 @@
 - **世界感知** — 假人能理解周围环境：方块、实体、地形、昼夜时间
 - **对话记忆** — 每个假人独立的聊天历史，超长自动摘要
 - **兼容 OpenAI API** — 支持 DeepSeek、OpenAI 或任意兼容接口
+- **零外部 Mod 依赖** — 自包含，不需要 Carpet 或其他 Mod
 
 ## 环境要求
 
@@ -24,7 +25,6 @@
 
 1. **安装 Fabric** — 参考 [Fabric 开发文档](https://docs.fabricmc.net/develop/getting-started/creating-a-project#setting-up)
 2. **放置依赖** 到 `mods/` 文件夹：
-   - `fabric-carpet-26.1+v260402.jar`（已包含在 `libs/` 中）
    - `fabric-api` 0.150.0+
    - `fabric-language-kotlin`
 3. **构建 Mod：**
@@ -48,41 +48,40 @@
 
 ### 生成假人
 
-使用 Carpet 的 `/player` 命令：
 ```
-/player [AI]Steve spawn
+/ai spawn Steve
 ```
-名字中包含 `[AI]` 的假人会被织灵自动识别。
+会在你当前位置生成一个名为 `[AI] Steve` 的假人。
 
 ### 发送指令
 
 ```
-/ai [AI]Steve 去砍点木头
-/ai [AI]Steve 到我这里来
-/ai [AI]Steve 在 100 64 200 建一个小房子
-/ai [AI]Steve 找钻石
-/ai [AI]Steve 攻击附近的敌对生物
+/ai Steve 去砍点木头
+/ai Steve 到我这里来
+/ai Steve 在 100 64 200 建一个小房子
+/ai Steve 找钻石
+/ai Steve 攻击附近的敌对生物
 ```
 
 ### 简单直发指令
 
 这些指令不经过 LLM，直接执行：
 ```
-/ai [AI]Steve forward 10
-/ai [AI]Steve turn left
-/ai [AI]Steve jump
-/ai [AI]Steve inventory
-/ai [AI]Steve health
-/ai [AI]Steve scan 8
-/ai [AI]Steve stop
+/ai Steve forward 10
+/ai Steve turn left
+/ai Steve jump
+/ai Steve inventory
+/ai Steve health
+/ai Steve scan 8
+/ai Steve stop
 ```
 
 ### 假人管理
 
 ```
 /ai list              — 列出所有活跃假人
-/ai stop [AI]Steve    — 停止假人当前动作
-/ai kill [AI]Steve    — 移除指定假人
+/ai stop Steve        — 停止假人当前动作
+/ai kill Steve        — 移除指定假人
 /ai killall           — 移除所有假人
 ```
 
@@ -119,19 +118,23 @@
 
 ```
 玩家 → /ai 指令 → CommandRouter（指令路由）
-                      ├── 简单指令 → 直接执行 Carpet 命令
-                      └── 复杂指令 → LLM 规划器 → 工具执行器 → Carpet /player
-                                                                    ↓
-                                                              Minecraft 世界
+                      ├── 简单指令 → ActionPack（直接控制）
+                      └── 复杂指令 → LLM 规划器 → ActionExecutor → ActionPack
+                                                                        ↓
+                                                                  FakePlayer.tick()
+                                                                        ↓
+                                                                  Minecraft 世界
 ```
 
-- **Carpet Mod** — 通过 `/player` 命令生成和控制假人
+- **FakePlayer** — 自定义 `ServerPlayer` 子类，使用 `FakeClientConnection`（EmbeddedChannel）
+- **FakePlayerManager** — 生成、追踪、移除 FakePlayer 实例
+- **ActionPack** — Tick 驱动的行为状态机（移动、攻击、使用、跳跃、挖掘）
 - **CommandRouter** — 将指令分为简单（直发）和复杂（走 LLM）两类
 - **LLM Planner** — 流式 OpenAI 兼容客户端，返回工具调用
-- **ToolExecutor** — 将工具调用映射为 Carpet 动作，含安全检查
+- **ActionExecutor** — 将工具调用映射为 ActionPack 操作
 - **WorldPerception** — 采集世界状态（位置、方块、实体、背包）
 - **BehaviorModes** — 自主生存行为（逃跑、反击、脱困、捡物）
-- **Pathfinding** — A* 寻路，支持斜坡和危险规避
+- **Pathfinding** — A* 寻路，支持斜坡和危险规避，由 PathFollower 驱动
 
 ## 许可证
 

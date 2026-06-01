@@ -8,8 +8,9 @@ import net.minecraft.world.level.block.state.BlockState
 import java.util.EnumMap
 
 /**
- * Tick 驱动的动作系统，参考 carpet 的 EntityPlayerActionPack。
- * 管理移动、攻击、使用等动作的状态机。
+ * Tick 驱动的动作状态机。
+ * 管理移动、攻击、使用、跳跃等动作。
+ * 由 FakePlayer.tick() 每 tick 调用 onUpdate() 驱动。
  */
 class ActionPack {
 

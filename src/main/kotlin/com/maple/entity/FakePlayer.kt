@@ -11,8 +11,9 @@ import net.minecraft.world.entity.ai.attributes.Attributes
 import java.util.UUID
 
 /**
- * 假玩家实体，参考 carpet 的 EntityPlayerMPFake。
- * 继承 ServerPlayer，使用无操作网络连接。
+ * 假玩家实体。
+ * 继承 ServerPlayer，使用无操作网络连接（EmbeddedChannel）。
+ * 通过 ActionPack 驱动行为，每 tick 由自身 tick() 方法驱动。
  */
 class FakePlayer(
     level: ServerLevel,

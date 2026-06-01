@@ -64,7 +64,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val targetPos = BlockPos(x, y, z)
 
         // 使用 A* 寻路
-        val level = fakePlayer.level() as net.minecraft.server.level.ServerLevel
+        val level = fakePlayer.level()
         val path = com.maple.pathfinding.AStarPathfinder.findPath(level, fakePlayer.blockPosition(), targetPos)
 
         if (path.isEmpty()) {
@@ -233,8 +233,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         var ticks = 0
         val maxTicks = 100 // 最多等待 5 秒
         while (ticks < maxTicks) {
-            val level = fakePlayer.level() as net.minecraft.server.level.ServerLevel
-            if (level.getBlockState(targetPos).isAir) break
+            if (fakePlayer.level().getBlockState(targetPos).isAir) break
             kotlinx.coroutines.delay(50)
             ticks++
         }
@@ -288,7 +287,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val radius = getIntParam(params, "radius") ?: 5
         val bot = getServerPlayer() ?: return "Bot 不存在"
         val pos = bot.blockPosition()
-        val level = bot.level() as net.minecraft.server.level.ServerLevel
+        val level = bot.level()
 
         val blockCounts = mutableMapOf<String, Int>()
         for (dx in -radius..radius) {

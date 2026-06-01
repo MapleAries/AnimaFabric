@@ -2,7 +2,7 @@
 
 [中文文档](README_CN.md)
 
-A Minecraft Fabric mod that brings LLM-powered AI agents into your game. Send natural language commands via `/ai`, and watch AI-controlled bots execute them — mining, building, fighting, pathfinding, and more.
+A Minecraft Fabric mod that brings LLM-powered AI agents into your game. Send natural language commands via `/ai`, and watch AI-controlled bots execute them — mining, building, fighting, pathfinding, and more. **No external dependencies** — uses Mixin to directly control fake players at 20 TPS.
 
 ## Features
 
@@ -13,6 +13,7 @@ A Minecraft Fabric mod that brings LLM-powered AI agents into your game. Send na
 - **World Perception** — Bots understand their surroundings: blocks, entities, terrain, time of day
 - **Conversation Memory** — Per-bot chat history with automatic summarization
 - **OpenAI-Compatible API** — Works with DeepSeek, OpenAI, or any compatible endpoint
+- **Zero External Mod Dependencies** — Self-contained, no Carpet or other mods required
 
 ## Prerequisites
 
@@ -24,7 +25,6 @@ A Minecraft Fabric mod that brings LLM-powered AI agents into your game. Send na
 
 1. **Install Fabric** — Follow the [Fabric getting started guide](https://docs.fabricmc.net/develop/getting-started/creating-a-project#setting-up)
 2. **Place dependencies** in your `mods/` folder:
-   - `fabric-carpet-26.1+v260402.jar` (included in `libs/`)
    - `fabric-api` 0.150.0+
    - `fabric-language-kotlin`
 3. **Build the mod:**
@@ -48,41 +48,40 @@ A Minecraft Fabric mod that brings LLM-powered AI agents into your game. Send na
 
 ### Spawn a Bot
 
-Use Carpet's `/player` command:
 ```
-/player [AI]Steve spawn
+/ai spawn Steve
 ```
-Bots with `[AI]` in their name are automatically detected by AnimaFabric.
+This creates a fake player `[AI] Steve` at your current position.
 
 ### Send Commands
 
 ```
-/ai [AI]Steve mine some wood
-/ai [AI]Steve come to me
-/ai [AI]Steve build a small house at 100 64 200
-/ai [AI]Steve find diamonds
-/ai [AI]Steve attack any hostile mobs nearby
+/ai Steve mine some wood
+/ai Steve come to me
+/ai Steve build a small house at 100 64 200
+/ai Steve find diamonds
+/ai Steve attack any hostile mobs nearby
 ```
 
 ### Simple Direct Commands
 
 These skip the LLM and execute immediately:
 ```
-/ai [AI]Steve forward 10
-/ai [AI]Steve turn left
-/ai [AI]Steve jump
-/ai [AI]Steve inventory
-/ai [AI]Steve health
-/ai [AI]Steve scan 8
-/ai [AI]Steve stop
+/ai Steve forward 10
+/ai Steve turn left
+/ai Steve jump
+/ai Steve inventory
+/ai Steve health
+/ai Steve scan 8
+/ai Steve stop
 ```
 
 ### Bot Management
 
 ```
 /ai list              — List all active bots
-/ai stop [AI]Steve    — Stop a bot's current action
-/ai kill [AI]Steve    — Remove a specific bot
+/ai stop Steve        — Stop a bot's current action
+/ai kill Steve        — Remove a specific bot
 /ai killall           — Remove all bots
 ```
 
@@ -119,19 +118,23 @@ These skip the LLM and execute immediately:
 
 ```
 Player → /ai command → CommandRouter
-                          ├── Simple → Direct Carpet command
-                          └── Complex → LLM Planner → ToolExecutor → Carpet /player
-                                                                        ↓
-                                                                  Minecraft World
+                          ├── Simple → ActionPack (direct control)
+                          └── Complex → LLM Planner → ActionExecutor → ActionPack
+                                                                          ↓
+                                                                    FakePlayer.tick()
+                                                                          ↓
+                                                                    Minecraft World
 ```
 
-- **Carpet Mod** — Bot spawning and low-level control via `/player` commands
+- **FakePlayer** — Custom `ServerPlayer` subclass with `FakeClientConnection` (EmbeddedChannel)
+- **FakePlayerManager** — Spawns, tracks, and removes FakePlayer instances
+- **ActionPack** — Tick-driven action state machine (movement, attack, use, jump, mining)
 - **CommandRouter** — Classifies commands as simple (direct) or complex (LLM)
 - **LLM Planner** — Streaming OpenAI-compatible client, returns tool calls
-- **ToolExecutor** — Maps tool calls to Carpet actions with safety checks
+- **ActionExecutor** — Maps tool calls to ActionPack operations
 - **WorldPerception** — Gathers world state (position, blocks, entities, inventory)
 - **BehaviorModes** — Autonomous survival behaviors (flee, fight, unstuck, collect)
-- **Pathfinding** — A* with slope handling and hazard avoidance
+- **Pathfinding** — A* with slope handling and hazard avoidance, driven by PathFollower
 
 ## License
 
