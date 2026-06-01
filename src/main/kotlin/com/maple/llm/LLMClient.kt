@@ -11,6 +11,14 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 
+/**
+ * LLM 响应结果，包含思考内容和实际输出。
+ */
+data class LLMResponse(
+    val thinking: String,  // 思考过程（reasoning_content）
+    val content: String    // 实际输出（content）
+)
+
 class LLMClient(private val config: MCMindConfig) {
 
     private val logger = LoggerFactory.getLogger("mc-mind")
@@ -21,12 +29,13 @@ class LLMClient(private val config: MCMindConfig) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     /**
-     * 流式请求：通过回调逐 chunk 返回内容
+     * 流式请求：返回思考内容和实际输出。
      */
     suspend fun chatStream(
         messages: List<ChatMessage>,
-        onChunk: (String) -> Unit
-    ): String = withContext(Dispatchers.IO) {
+        onThinking: (String) -> Unit = {},
+        onContent: (String) -> Unit = {}
+    ): LLMResponse = withContext(Dispatchers.IO) {
         try {
             val request = ChatRequest(
                 model = config.model,
@@ -37,7 +46,6 @@ class LLMClient(private val config: MCMindConfig) {
 
             val requestBody = json.encodeToString(request)
             logger.info("[MC-Mind] 发送 LLM 请求: URL={}, Model={}", config.apiUrl, config.model)
-            logger.info("[MC-Mind] 请求体: {}", requestBody)
 
             val httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(config.apiUrl))
@@ -54,21 +62,13 @@ class LLMClient(private val config: MCMindConfig) {
             if (response.statusCode() != 200) {
                 val errorBody = response.body().collect(java.util.stream.Collectors.joining("\n"))
                 logger.error("[MC-Mind] LLM 请求失败: 状态码={}, 响应={}", response.statusCode(), errorBody)
-                return@withContext ""
+                return@withContext LLMResponse("", "")
             }
 
-            val fullContent = StringBuilder()
-            var lineCount = 0
-            var firstFewLines = mutableListOf<String>()
+            val thinkingBuilder = StringBuilder()
+            val contentBuilder = StringBuilder()
 
             response.body().forEach { line ->
-                lineCount++
-
-                // 记录前 10 行用于调试
-                if (lineCount <= 10) {
-                    firstFewLines.add("行$lineCount: $line")
-                }
-
                 if (line.startsWith("data: ")) {
                     val data = line.removePrefix("data: ").trim()
                     if (data == "[DONE]") return@forEach
@@ -76,11 +76,14 @@ class LLMClient(private val config: MCMindConfig) {
                         val chunk = json.decodeFromString<StreamChunk>(data)
                         val delta = chunk.choices.firstOrNull()?.delta
                         if (delta != null) {
-                            // 优先使用 content，如果为空则使用 reasoning_content
-                            val content = delta.content ?: delta.reasoningContent
-                            if (content != null && content.isNotEmpty()) {
-                                fullContent.append(content)
-                                onChunk(content)
+                            // 分别收集思考内容和实际输出
+                            if (delta.reasoningContent != null && delta.reasoningContent.isNotEmpty()) {
+                                thinkingBuilder.append(delta.reasoningContent)
+                                onThinking(delta.reasoningContent)
+                            }
+                            if (delta.content != null && delta.content.isNotEmpty()) {
+                                contentBuilder.append(delta.content)
+                                onContent(delta.content)
                             }
                         }
                     } catch (e: Exception) {
@@ -89,14 +92,11 @@ class LLMClient(private val config: MCMindConfig) {
                 }
             }
 
-            // 打印前几行用于调试
-            logger.info("[MC-Mind] LLM 响应前 10 行:")
-            firstFewLines.forEach { logger.info("[MC-Mind]   {}", it) }
-            logger.info("[MC-Mind] LLM 响应完成，共 {} 行，内容长度: {}", lineCount, fullContent.length)
-            fullContent.toString()
+            logger.info("[MC-Mind] LLM 响应完成 - 思考: {}字, 内容: {}字", thinkingBuilder.length, contentBuilder.length)
+            LLMResponse(thinkingBuilder.toString(), contentBuilder.toString())
         } catch (e: Exception) {
             logger.error("[MC-Mind] LLM 请求异常: {}", e.message, e)
-            ""
+            LLMResponse("", "")
         }
     }
 }

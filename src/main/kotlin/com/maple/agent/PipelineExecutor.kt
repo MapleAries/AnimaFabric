@@ -38,20 +38,27 @@ class PipelineExecutor(
         messages.addAll(memory.getMessages())
 
         // 3. 调用 LLM（流式）
-        val response = llmClient.chatStream(messages) { }
+        val llmResponse = llmClient.chatStream(messages)
 
-        if (response.isEmpty()) {
-            return "LLM 请求失败，请检查配置。"
+        // 4. 处理思考内容（如果有）
+        if (llmResponse.thinking.isNotBlank()) {
+            // 发送思考摘要给玩家
+            val thinkingSummary = summarizeThinking(llmResponse.thinking)
+            sendChatMessage("思考：$thinkingSummary")
         }
 
-        println("[MC-Mind] LLM 原始响应: $response")
+        // 5. 检查实际输出
+        if (llmResponse.content.isBlank()) {
+            return "LLM 未返回有效内容，请重试。"
+        }
 
-        // 4. 解析响应
-        val parsed = parseResponse(response)
-        println("[MC-Mind] 解析结果: $parsed")
-        memory.addAssistantMessage(response)
+        println("[MC-Mind] LLM 实际输出: ${llmResponse.content}")
 
-        // 5. 执行
+        // 6. 解析响应
+        val parsed = parseResponse(llmResponse.content)
+        memory.addAssistantMessage(llmResponse.content)
+
+        // 7. 执行
         return when (parsed) {
             is ParsedResponse.ToolCall -> {
                 executeStep(parsed.step)
@@ -64,6 +71,38 @@ class PipelineExecutor(
             }
             is ParsedResponse.Error -> {
                 parsed.message
+            }
+        }
+    }
+
+    /**
+     * 总结思考内容，提取关键信息。
+     */
+    private fun summarizeThinking(thinking: String): String {
+        // 取前 100 个字符作为摘要
+        val summary = thinking.take(100).trim()
+        return if (thinking.length > 100) "$summary..." else summary
+    }
+
+    /**
+     * 发送聊天消息，自动分割长消息。
+     */
+    private fun sendChatMessage(message: String) {
+        val maxLength = 100 // Minecraft 聊天框每行约 100 个字符
+
+        if (message.length <= maxLength) {
+            server.playerList.broadcastSystemMessage(
+                net.minecraft.network.chat.Component.literal("[$botName] $message"),
+                false
+            )
+        } else {
+            // 分割长消息
+            val lines = message.chunked(maxLength)
+            for (line in lines) {
+                server.playerList.broadcastSystemMessage(
+                    net.minecraft.network.chat.Component.literal("[$botName] $line"),
+                    false
+                )
             }
         }
     }
@@ -89,7 +128,6 @@ class PipelineExecutor(
             }
         } catch (e: Exception) {
             // 如果 JSON 解析失败，检查是否是自然语言回复
-            // 将自然语言回复作为澄清请求返回
             if (response.isNotBlank() && !response.trimStart().startsWith("{")) {
                 println("[MC-Mind] LLM 返回自然语言，作为澄清请求处理")
                 ParsedResponse.Clarification(response)
