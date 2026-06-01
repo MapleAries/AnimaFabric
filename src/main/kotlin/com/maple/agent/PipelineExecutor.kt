@@ -4,6 +4,7 @@ import com.maple.llm.ChatMessage
 import com.maple.llm.LLMClient
 import com.maple.llm.LLMPlanner
 import kotlinx.serialization.json.*
+import com.maple.agent.ActionPlanNode
 
 /**
  * 管线解析 + 执行，支持错误反馈重试。
@@ -86,23 +87,33 @@ class PipelineExecutor(
 
             // 7. 执行
             when (parsed) {
+                is ParsedResponse.ActionPlan -> {
+                    // 结构化行动方案（带循环和条件）
+                    val planExecutor = PlanExecutor(botName, server, actionExecutor)
+                    val result = planExecutor.execute(parsed.node)
+                    val hasFailure = result.any { it.failed }
+
+                    if (!hasFailure) {
+                        val resultText = result.joinToString("\n") { it.message }
+                        sendChatMessage(parsed.goal)
+                        return resultText
+                    }
+
+                    lastError = buildStepErrorFeedback(result)
+                    println("[AnimaFabric] Retry ${attempt + 1}/$maxRetries: action plan failed")
+                }
                 is ParsedResponse.Success -> {
                     if (parsed.commands.isEmpty()) {
-                        // 纯自然语言回复，视为成功
                         if (parsed.message.isNotBlank()) {
                             sendChatMessage(parsed.message)
                         }
                         return parsed.message
                     }
 
-                    // 执行命令
                     val result = executeCommands(parsed.commands)
-
-                    // 检查是否有失败的步骤
                     val hasFailure = result.any { it.failed }
 
                     if (!hasFailure) {
-                        // 全部成功
                         val resultText = result.joinToString("\n") { it.message }
                         if (parsed.message.isNotBlank()) {
                             sendChatMessage(parsed.message)
@@ -110,7 +121,6 @@ class PipelineExecutor(
                         return resultText
                     }
 
-                    // 有失败，准备重试
                     lastError = buildErrorFeedback(result)
                     println("[AnimaFabric] Retry ${attempt + 1}/$maxRetries: execution failed, feeding error back to LLM")
                     println("[AnimaFabric] Error feedback: $lastError")
@@ -145,6 +155,19 @@ class PipelineExecutor(
     private fun buildErrorFeedback(results: List<StepResult>): String {
         val sb = StringBuilder()
         sb.appendLine("Your previous plan had failures:")
+        for ((index, result) in results.withIndex()) {
+            val status = if (result.failed) "FAILED" else "OK"
+            sb.appendLine("- Step ${index + 1} [${result.toolName}]: $status - ${result.message}")
+        }
+        return sb.toString().trim()
+    }
+
+    /**
+     * 构建 PlanExecutor 的错误反馈。
+     */
+    private fun buildStepErrorFeedback(results: List<PlanExecutor.StepResult>): String {
+        val sb = StringBuilder()
+        sb.appendLine("Your previous action plan had failures:")
         for ((index, result) in results.withIndex()) {
             val status = if (result.failed) "FAILED" else "OK"
             sb.appendLine("- Step ${index + 1} [${result.toolName}]: $status - ${result.message}")
@@ -208,6 +231,16 @@ class PipelineExecutor(
             val obj = element.jsonObject
 
             when {
+                // 结构化行动方案（带循环和条件）
+                "goal" in obj && "steps" in obj -> {
+                    val goal = obj["goal"]!!.jsonPrimitive.content
+                    val actionPlan = parseActionPlan(obj)
+                    if (actionPlan != null) {
+                        return ParsedResponse.ActionPlan(goal, actionPlan)
+                    }
+                    return ParsedResponse.Success(goal, emptyList())
+                }
+                // 传统格式
                 "tasks" in obj -> {
                     val plan = obj["plan"]?.jsonPrimitive?.content ?: ""
                     val tasks = obj["tasks"]!!.jsonArray.map { parseTask(it.jsonObject) }
@@ -276,6 +309,110 @@ class PipelineExecutor(
     }
 
     /**
+     * 解析结构化行动方案（ActionPlan）。
+     */
+    private fun parseActionPlan(obj: JsonObject): ActionPlanNode? {
+        val steps = obj["steps"]?.jsonArray ?: return null
+        val nodes = steps.mapNotNull { parseNode(it.jsonObject) }
+        return if (nodes.size == 1) nodes[0] else ActionPlanNode.Sequential(nodes)
+    }
+
+    private fun parseNode(obj: JsonObject): ActionPlanNode? {
+        return when {
+            "action" in obj -> {
+                val tool = obj["action"]!!.jsonPrimitive.content
+                val params = parseJsonParams(obj["parameters"]?.jsonObject)
+                ActionPlanNode.Action(tool, params)
+            }
+            "loop" in obj -> {
+                val loopObj = obj["loop"]!!.jsonObject
+                val steps = loopObj["steps"]?.jsonArray?.mapNotNull { parseNode(it.jsonObject) } ?: emptyList()
+                val until = parseCondition(loopObj["until"]?.jsonObject)
+                val whileCond = parseCondition(loopObj["while"]?.jsonObject)
+                val maxIter = loopObj["max_iterations"]?.jsonPrimitive?.intOrNull ?: 20
+                ActionPlanNode.Loop(steps, until, whileCond, maxIter)
+            }
+            "conditional" in obj -> {
+                val condObj = obj["conditional"]!!.jsonObject
+                val condition = parseCheckCondition(condObj["check"]?.jsonObject) ?: return null
+                val thenSteps = condObj["then"]?.jsonArray?.mapNotNull { parseNode(it.jsonObject) } ?: emptyList()
+                val elseSteps = condObj["else"]?.jsonArray?.mapNotNull { parseNode(it.jsonObject) } ?: emptyList()
+                ActionPlanNode.Conditional(condition, thenSteps, elseSteps)
+            }
+            "delay" in obj -> {
+                val ms = obj["delay"]!!.jsonPrimitive.longOrNull ?: 1000L
+                ActionPlanNode.Delay(ms)
+            }
+            else -> null
+        }
+    }
+
+    private fun parseCondition(obj: JsonObject?): LoopCondition? {
+        if (obj == null) return null
+        val type = parseConditionType(obj["type"]?.jsonPrimitive?.content) ?: return null
+        return LoopCondition(
+            type = type,
+            item = obj["item"]?.jsonPrimitive?.content,
+            count = obj["count"]?.jsonPrimitive?.intOrNull,
+            pos = parseBlockPos(obj["pos"]?.jsonObject),
+            blockState = obj["block_state"]?.jsonPrimitive?.content,
+            health = obj["health"]?.jsonPrimitive?.floatOrNull
+        )
+    }
+
+    private fun parseCheckCondition(obj: JsonObject?): CheckCondition? {
+        if (obj == null) return null
+        val type = parseConditionType(obj["type"]?.jsonPrimitive?.content) ?: return null
+        return CheckCondition(
+            type = type,
+            item = obj["item"]?.jsonPrimitive?.content,
+            count = obj["count"]?.jsonPrimitive?.intOrNull,
+            pos = parseBlockPos(obj["pos"]?.jsonObject),
+            blockState = obj["block_state"]?.jsonPrimitive?.content,
+            health = obj["health"]?.jsonPrimitive?.floatOrNull
+        )
+    }
+
+    private fun parseConditionType(type: String?): ConditionType? {
+        return when (type) {
+            "inventory_contains" -> ConditionType.INVENTORY_CONTAINS
+            "inventory_full" -> ConditionType.INVENTORY_FULL
+            "block_at" -> ConditionType.BLOCK_AT
+            "health_below" -> ConditionType.HEALTH_BELOW
+            "health_above" -> ConditionType.HEALTH_ABOVE
+            "always" -> ConditionType.ALWAYS
+            "never" -> ConditionType.NEVER
+            else -> null
+        }
+    }
+
+    private fun parseBlockPos(obj: JsonObject?): BlockPos3? {
+        if (obj == null) return null
+        val x = obj["x"]?.jsonPrimitive?.intOrNull ?: return null
+        val y = obj["y"]?.jsonPrimitive?.intOrNull ?: return null
+        val z = obj["z"]?.jsonPrimitive?.intOrNull ?: return null
+        return BlockPos3(x, y, z)
+    }
+
+    private fun parseJsonParams(obj: JsonObject?): Map<String, Any> {
+        if (obj == null) return emptyMap()
+        val params = mutableMapOf<String, Any>()
+        obj.forEach { (key, value) ->
+            params[key] = when (value) {
+                is JsonPrimitive -> {
+                    when {
+                        value.isString -> value.content
+                        value.booleanOrNull != null -> value.boolean
+                        else -> value.doubleOrNull ?: value.intOrNull ?: value.content
+                    }
+                }
+                else -> value.toString()
+            }
+        }
+        return params
+    }
+
+    /**
      * 执行命令列表，返回每个步骤的结果。
      */
     private suspend fun executeCommands(commands: List<ParsedCommand>): List<StepResult> {
@@ -335,6 +472,7 @@ class PipelineExecutor(
 
     sealed class ParsedResponse {
         data class Success(val message: String, val commands: List<ParsedCommand>) : ParsedResponse()
+        data class ActionPlan(val goal: String, val node: ActionPlanNode) : ParsedResponse()
         data class Error(val message: String) : ParsedResponse()
     }
 }
