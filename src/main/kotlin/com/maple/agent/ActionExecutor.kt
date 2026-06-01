@@ -198,8 +198,23 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         // 开始挖掘
         executeCarpetCommand("attack continuous")
 
-        // 等待挖掘完成
-        kotlinx.coroutines.delay(3000)
+        // 循环检测，直到方块被破坏（变成空气）或超时
+        val targetPos = net.minecraft.core.BlockPos(x, y, z)
+        var ticks = 0
+        val maxTicks = 100 // 最多等待 5 秒 (50 * 100ms)
+        while (ticks < maxTicks) {
+            val isBroken = GameThreadDispatcher.runOnGameThread(server) {
+                val botPlayer = server.playerList.getPlayerByName(botName)
+                if (botPlayer != null) {
+                    botPlayer.level().getBlockState(targetPos).isAir
+                } else {
+                    true
+                }
+            }
+            if (isBroken) break
+            kotlinx.coroutines.delay(50)
+            ticks++
+        }
 
         // 停止挖掘
         executeCarpetCommand("stop")
