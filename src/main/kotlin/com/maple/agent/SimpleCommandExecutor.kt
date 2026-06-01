@@ -1,15 +1,20 @@
 package com.maple.agent
 
 import com.maple.entity.FakePlayerManager
+import net.minecraft.core.BlockPos
 import net.minecraft.server.MinecraftServer
 
 /**
  * 简单指令执行器 - 直接执行，不经过 LLM。
+ * 直接操作 FakePlayer 的 ActionPack。
  */
 class SimpleCommandExecutor(
     private val botName: String,
     private val server: MinecraftServer
 ) {
+
+    private fun getFakePlayer() = FakePlayerManager.getFakePlayer(botName)
+    private fun getServerPlayer() = FakePlayerManager.getBot(server, botName)
 
     /**
      * 执行简单指令。
@@ -39,25 +44,28 @@ class SimpleCommandExecutor(
     }
 
     private suspend fun executeMove(direction: String, groups: List<String>): String {
-        // 从 groups 中提取距离，默认 1 格
         val distance = groups.getOrNull(2)?.toIntOrNull() ?: 1
 
-        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
-        val startPos = bot.position()
+        val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
+        val startPos = fakePlayer.position()
 
-        // carpet 的 move 命令格式
-        executeCarpetCommand("move $direction")
+        val (fwd, strafe) = when (direction.lowercase()) {
+            "forward" -> 1.0f to 0.0f
+            "backward" -> -1.0f to 0.0f
+            "left" -> 0.0f to -1.0f
+            "right" -> 0.0f to 1.0f
+            else -> return "无效方向：$direction"
+        }
 
-        // 等待移动完成（行走速度约 4.317 格/秒，每格约 232ms）
+        fakePlayer.actionPack.setMovement(fwd, strafe)
+
         val waitTime = (distance * 250L).coerceAtMost(5000L)
         kotlinx.coroutines.delay(waitTime)
 
-        // 停止移动
-        executeCarpetCommand("stop")
+        fakePlayer.actionPack.stopMovement()
 
-        val endPos = bot.position()
+        val endPos = fakePlayer.position()
         val movedDistance = startPos.distanceTo(endPos)
-
         return "已向 $direction 移动约${"%.1f".format(movedDistance)}格"
     }
 
@@ -67,39 +75,71 @@ class SimpleCommandExecutor(
         val y = groups[2].toIntOrNull() ?: return "Y 坐标无效"
         val z = groups[3].toIntOrNull() ?: return "Z 坐标无效"
 
-        executeCarpetCommand("move forward")
-        kotlinx.coroutines.delay(2000)
-        executeCarpetCommand("stop")
+        val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
+        val startPos = fakePlayer.blockPosition()
+        val targetPos = BlockPos(x, y, z)
 
-        return "正在移动到 ($x, $y, $z)"
+        // 使用 A* 寻路
+        val level = fakePlayer.level() as net.minecraft.server.level.ServerLevel
+        val path = com.maple.pathfinding.AStarPathfinder.findPath(level, startPos, targetPos)
+
+        if (path.isEmpty()) {
+            // fallback 到直线移动
+            val dx = x - startPos.x.toDouble()
+            val dz = z - startPos.z.toDouble()
+            val yaw = Math.toDegrees(Math.atan2(-dx, dz)).toFloat()
+            fakePlayer.actionPack.lookAt(fakePlayer, yaw, 0f)
+            fakePlayer.actionPack.setMovement(1.0f, 0f)
+            kotlinx.coroutines.delay(2000)
+            fakePlayer.actionPack.stopAll()
+            return "正在移动到 ($x, $y, $z)（无路径，直线移动）"
+        }
+
+        // 使用 PathFollower
+        val pathFollower = com.maple.pathfinding.PathFollower()
+        pathFollower.setPath(path)
+
+        var ticks = 0
+        while (!pathFollower.isComplete() && !pathFollower.isFailed() && ticks < 400) {
+            pathFollower.tick(fakePlayer)
+            kotlinx.coroutines.delay(50)
+            ticks++
+        }
+
+        fakePlayer.actionPack.stopAll()
+        return "已移动到 ($x, $y, $z)"
     }
 
     private fun executeTurn(direction: String): String {
-        executeCarpetCommand("turn $direction")
+        val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
+        fakePlayer.actionPack.turn(fakePlayer, direction)
         return "已转向 $direction"
     }
 
     private fun executeJump(): String {
-        executeCarpetCommand("jump")
+        val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
+        fakePlayer.actionPack.start(ActionPack.ActionType.JUMP, ActionPack.Action.once(ActionPack.ActionType.JUMP))
         return "已跳跃"
     }
 
     private suspend fun executeAttack(): String {
-        executeCarpetCommand("attack continuous")
+        val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
+        fakePlayer.actionPack.startContinuous(ActionPack.ActionType.ATTACK)
         kotlinx.coroutines.delay(500)
-        executeCarpetCommand("stop")
+        fakePlayer.actionPack.stopContinuous(ActionPack.ActionType.ATTACK)
         return "已攻击"
     }
 
     private suspend fun executeUse(): String {
-        executeCarpetCommand("use continuous")
+        val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
+        fakePlayer.actionPack.startContinuous(ActionPack.ActionType.USE)
         kotlinx.coroutines.delay(500)
-        executeCarpetCommand("stop")
+        fakePlayer.actionPack.stopContinuous(ActionPack.ActionType.USE)
         return "已使用物品"
     }
 
     private fun executeGetInventory(): String {
-        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
+        val bot = getServerPlayer() ?: return "Bot 不存在"
         val items = mutableListOf<String>()
         for (i in 0 until bot.inventory.containerSize) {
             val stack = bot.inventory.getItem(i)
@@ -111,17 +151,17 @@ class SimpleCommandExecutor(
     }
 
     private fun executeGetHealth(): String {
-        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
+        val bot = getServerPlayer() ?: return "Bot 不存在"
         return "血量：${bot.health.toInt()}/${bot.maxHealth.toInt()}"
     }
 
     private fun executeGetHunger(): String {
-        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
+        val bot = getServerPlayer() ?: return "Bot 不存在"
         return "饥饿值：${bot.foodData.foodLevel}/20"
     }
 
     private fun executeScanArea(): String {
-        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
+        val bot = getServerPlayer() ?: return "Bot 不存在"
         val pos = bot.blockPosition()
         val level = bot.level() as net.minecraft.server.level.ServerLevel
 
@@ -150,20 +190,21 @@ class SimpleCommandExecutor(
     }
 
     private fun executeStop(): String {
-        executeCarpetCommand("stop")
+        val fakePlayer = getFakePlayer()
+        fakePlayer?.actionPack?.stopAll()
         return "已停止所有动作"
     }
 
     /**
-     * 挖掘面前的方块 - 使用世界感知获取面前方块坐标。
+     * 挖掘面前的方块。
      */
     private suspend fun executeMineFront(): String {
-        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
-        val pos = bot.blockPosition()
-        val level = bot.level() as net.minecraft.server.level.ServerLevel
+        val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
+        val pos = fakePlayer.blockPosition()
+        val level = fakePlayer.level() as net.minecraft.server.level.ServerLevel
 
         // 根据朝向获取面前 1 格的方块
-        val yaw = bot.yRot
+        val yaw = fakePlayer.yRot
         val facingDirection = getFacingDirection(yaw)
         val frontPos = when (facingDirection) {
             "NORTH" -> pos.north()
@@ -180,31 +221,20 @@ class SimpleCommandExecutor(
 
         val blockName = blockState.block.name.string
 
-        // 看向方块
-        executeCarpetCommand("look at ${frontPos.x} ${frontPos.y} ${frontPos.z}")
+        // 看向方块并开始挖掘
+        fakePlayer.actionPack.lookAtBlock(fakePlayer, frontPos)
+        fakePlayer.actionPack.startContinuous(ActionPack.ActionType.ATTACK)
 
-        // 开始挖掘
-        executeCarpetCommand("attack continuous")
-
-        // 循环检测，直到方块被破坏（变成空气）或超时
+        // 循环检测，直到方块被破坏或超时
         var ticks = 0
-        val maxTicks = 100 // 最多等待 5 秒 (50 * 100ms)
+        val maxTicks = 100
         while (ticks < maxTicks) {
-            val isBroken = GameThreadDispatcher.runOnGameThread(server) {
-                val botPlayer = server.playerList.getPlayerByName(botName)
-                if (botPlayer != null) {
-                    botPlayer.level().getBlockState(frontPos).isAir
-                } else {
-                    true
-                }
-            }
-            if (isBroken) break
+            if (level.getBlockState(frontPos).isAir) break
             kotlinx.coroutines.delay(50)
             ticks++
         }
 
-        // 停止挖掘
-        executeCarpetCommand("stop")
+        fakePlayer.actionPack.stopContinuous(ActionPack.ActionType.ATTACK)
 
         return "已挖掘面前的 $blockName (${frontPos.x}, ${frontPos.y}, ${frontPos.z})"
     }
@@ -219,18 +249,6 @@ class SimpleCommandExecutor(
         }
     }
 
-    private fun executeCarpetCommand(command: String): Boolean {
-        return try {
-            val fullCommand = "/player $botName $command"
-            println("[AnimaFabric] 执行简单指令: $fullCommand")
-            server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), fullCommand)
-            true
-        } catch (e: Exception) {
-            println("[AnimaFabric] 指令执行异常: ${e.message}")
-            false
-        }
-    }
-
     /**
      * 执行直接指令（如 /give, /tp 等）。
      */
@@ -239,13 +257,10 @@ class SimpleCommandExecutor(
 
         return try {
             val fullCommand = if (command.startsWith("/")) command else "/$command"
-            println("[AnimaFabric] 执行直接指令: $fullCommand")
-
             server.getCommands().performPrefixedCommand(
                 server.createCommandSourceStack(),
                 fullCommand
             )
-
             "已执行指令: $fullCommand"
         } catch (e: Exception) {
             "指令执行失败: ${e.message}"
