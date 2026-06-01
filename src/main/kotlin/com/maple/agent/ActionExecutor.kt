@@ -54,13 +54,34 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val y = (params["y"] as? Number)?.toInt() ?: return "缺少参数 y"
         val z = (params["z"] as? Number)?.toInt() ?: return "缺少参数 z"
 
-        // 使用 carpet 的 goto 命令
-        executeCarpetCommand("goto $x $y $z")
+        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
+        val startPos = bot.position()
 
-        // 等待一段时间让 bot 移动
-        kotlinx.coroutines.delay(3000)
+        // 计算方向和距离
+        val dx = x - startPos.x
+        val dz = z - startPos.z
+        val distance = Math.sqrt(dx * dx + dz * dz)
 
-        return "正在移动到 ($x, $y, $z)"
+        // 计算目标朝向
+        val targetYaw = Math.toDegrees(Math.atan2(-dx, dz)).toFloat()
+
+        // 设置朝向
+        executeCarpetCommand("look $targetYaw 0")
+
+        // 开始向前移动
+        executeCarpetCommand("move forward")
+
+        // 等待移动完成（根据距离计算等待时间）
+        val waitTime = (distance * 250L).toLong().coerceIn(500, 10000)
+        kotlinx.coroutines.delay(waitTime)
+
+        // 停止移动
+        executeCarpetCommand("stop")
+
+        val endPos = bot.position()
+        val movedDistance = startPos.distanceTo(endPos)
+
+        return "已移动到 ($x, $y, $z) 附近（移动了${"%.1f".format(movedDistance)}格）"
     }
 
     private suspend fun executeMove(params: Map<String, Any>): String {

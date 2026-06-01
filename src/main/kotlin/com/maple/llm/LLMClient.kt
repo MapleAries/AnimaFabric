@@ -37,7 +37,7 @@ class LLMClient(private val config: MCMindConfig) {
 
             val requestBody = json.encodeToString(request)
             logger.info("[MC-Mind] 发送 LLM 请求: URL={}, Model={}", config.apiUrl, config.model)
-            logger.debug("[MC-Mind] 请求体: {}", requestBody)
+            logger.info("[MC-Mind] 请求体: {}", requestBody)
 
             val httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(config.apiUrl))
