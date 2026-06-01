@@ -58,11 +58,11 @@ class PipelineExecutor(
 
         // 7. 执行
         return when (parsed) {
-            is ParsedResponse.ToolCall -> {
-                executeStep(parsed.step)
-            }
-            is ParsedResponse.Pipeline -> {
-                executePipeline(parsed.steps)
+            is ParsedResponse.Success -> {
+                // 显示计划
+                sendChatMessage("${parsed.plan}")
+                // 执行任务
+                executeTasks(parsed.tasks)
             }
             is ParsedResponse.Clarification -> {
                 parsed.message
@@ -77,7 +77,7 @@ class PipelineExecutor(
      * 发送聊天消息，自动分割长消息。
      */
     private fun sendChatMessage(message: String) {
-        val maxLength = 100 // Minecraft 聊天框每行约 100 个字符
+        val maxLength = 100
 
         if (message.length <= maxLength) {
             server.playerList.broadcastSystemMessage(
@@ -85,7 +85,6 @@ class PipelineExecutor(
                 false
             )
         } else {
-            // 分割长消息
             val lines = message.chunked(maxLength)
             for (line in lines) {
                 server.playerList.broadcastSystemMessage(
@@ -96,6 +95,12 @@ class PipelineExecutor(
         }
     }
 
+    /**
+     * 解析 LLM 响应。
+     * 支持两种格式：
+     * 1. 新格式：{"reasoning": "...", "plan": "...", "tasks": [...]}
+     * 2. 旧格式：{"tool": "...", "parameters": {...}} 或 {"pipeline": [...]}
+     */
     private fun parseResponse(response: String): ParsedResponse {
         return try {
             val jsonStr = extractJson(response)
@@ -103,15 +108,25 @@ class PipelineExecutor(
             val obj = element.jsonObject
 
             when {
+                // 新格式：reasoning + plan + tasks
+                "tasks" in obj -> {
+                    val plan = obj["plan"]?.jsonPrimitive?.content ?: "执行任务"
+                    val tasks = obj["tasks"]!!.jsonArray.map { parseTask(it.jsonObject) }
+                    ParsedResponse.Success(plan, tasks)
+                }
+                // 旧格式：单个工具调用
+                "tool" in obj -> {
+                    val task = parseTask(obj)
+                    ParsedResponse.Success("执行 ${task.tool}", listOf(task))
+                }
+                // 旧格式：管线
+                "pipeline" in obj -> {
+                    val tasks = obj["pipeline"]!!.jsonArray.map { parseTask(it.jsonObject) }
+                    ParsedResponse.Success("执行管线", tasks)
+                }
+                // 澄清请求
                 "clarification" in obj -> {
                     ParsedResponse.Clarification(obj["clarification"]!!.jsonPrimitive.content)
-                }
-                "pipeline" in obj -> {
-                    val steps = obj["pipeline"]!!.jsonArray.map { parseStep(it.jsonObject) }
-                    ParsedResponse.Pipeline(steps)
-                }
-                "tool" in obj -> {
-                    ParsedResponse.ToolCall(parseStep(obj))
                 }
                 else -> ParsedResponse.Error("无法解析 LLM 响应：$response")
             }
@@ -126,8 +141,14 @@ class PipelineExecutor(
         }
     }
 
-    private fun parseStep(obj: JsonObject): PipelineStep {
-        val tool = obj["tool"]!!.jsonPrimitive.content
+    /**
+     * 解析单个任务。
+     * 支持两种格式：
+     * 1. 新格式：{"action": "...", "parameters": {...}}
+     * 2. 旧格式：{"tool": "...", "parameters": {...}}
+     */
+    private fun parseTask(obj: JsonObject): PipelineStep {
+        val tool = (obj["action"] ?: obj["tool"])!!.jsonPrimitive.content
         val params = mutableMapOf<String, Any>()
         obj["parameters"]?.jsonObject?.forEach { (key, value) ->
             params[key] = when (value) {
@@ -141,37 +162,38 @@ class PipelineExecutor(
                 else -> value.toString()
             }
         }
-        println("[MC-Mind] 解析步骤: tool=$tool, params=$params")
+        println("[MC-Mind] 解析任务: action=$tool, params=$params")
         return PipelineStep(tool, params)
     }
 
-    private suspend fun executePipeline(steps: List<PipelineStep>): String {
+    /**
+     * 执行任务列表。
+     */
+    private suspend fun executeTasks(tasks: List<PipelineStep>): String {
         val results = mutableListOf<String>()
 
-        for ((index, step) in steps.withIndex()) {
+        for ((index, task) in tasks.withIndex()) {
             val resolvedParams = sharedState.resolveAll(
-                step.params.mapValues { it.value.toString() }
+                task.params.mapValues { it.value.toString() }
             )
 
-            val result = executeStep(PipelineStep(step.tool, resolvedParams))
-            results.add("步骤 ${index + 1} [${step.tool}]: $result")
+            val result = actionExecutor.execute(task.tool, resolvedParams)
+            results.add("步骤 ${index + 1} [${task.tool}]: $result")
 
-            if (step.tool == "moveTo") {
+            // 更新共享状态
+            if (task.tool == "moveTo") {
                 sharedState.set("moveTo_result", result)
-            } else if (step.tool == "mineBlock") {
+            } else if (task.tool == "mineBlock") {
                 sharedState.set("mineBlock_result", result)
             }
 
-            if (result.startsWith("失败") || result.startsWith("错误")) {
+            // 如果步骤失败，停止执行
+            if (result.startsWith("失败") || result.startsWith("错误") || result.startsWith("挖掘失败")) {
                 break
             }
         }
 
         return results.joinToString("\n")
-    }
-
-    private suspend fun executeStep(step: PipelineStep): String {
-        return actionExecutor.execute(step.tool, step.params)
     }
 
     private fun extractJson(text: String): String {
@@ -189,8 +211,7 @@ class PipelineExecutor(
     )
 
     sealed class ParsedResponse {
-        data class ToolCall(val step: PipelineStep) : ParsedResponse()
-        data class Pipeline(val steps: List<PipelineStep>) : ParsedResponse()
+        data class Success(val plan: String, val tasks: List<PipelineStep>) : ParsedResponse()
         data class Clarification(val message: String) : ParsedResponse()
         data class Error(val message: String) : ParsedResponse()
     }

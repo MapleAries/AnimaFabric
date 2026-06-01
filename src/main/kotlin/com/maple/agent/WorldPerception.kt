@@ -4,25 +4,28 @@ import net.minecraft.core.BlockPos
 import net.minecraft.world.entity.EntityType
 import net.minecraft.world.entity.MobCategory
 import net.minecraft.world.entity.player.Player
-import net.minecraft.world.level.ClipContext
 import net.minecraft.world.level.Level
-import net.minecraft.world.level.block.Blocks
-import net.minecraft.world.level.chunk.LevelChunk
-import net.minecraft.world.level.levelgen.Heightmap
-import net.minecraft.world.phys.BlockHitResult
-import net.minecraft.world.phys.HitResult
-import net.minecraft.world.phys.Vec3
-import kotlin.math.cos
-import kotlin.math.sin
 
 object WorldPerception {
 
-    // 重要方块列表（使用显示名称，与 block.name.string 一致）
+    // 重要方块列表（使用显示名称）
     private val IMPORTANT_BLOCKS = setOf(
         "Oak Log", "Birch Log", "Spruce Log", "Jungle Log", "Acacia Log", "Dark Oak Log",
         "Stone", "Cobblestone", "Coal Ore", "Iron Ore", "Gold Ore", "Diamond Ore",
         "Chest", "Barrel", "Crafting Table", "Furnace",
         "Oak Planks", "Birch Planks", "Spruce Planks"
+    )
+
+    // 矿石深度映射（参考 Steve 模）
+    private val ORE_DEPTH_MAP = mapOf(
+        "Diamond Ore" to -59,
+        "Gold Ore" to -16,
+        "Iron Ore" to 64,
+        "Coal Ore" to 80,
+        "Copper Ore" to 48,
+        "Lapis Lazuli Ore" to 0,
+        "Redstone Ore" to -59,
+        "Emerald Ore" to -16
     )
 
     fun scan(player: Player): String {
@@ -37,19 +40,13 @@ object WorldPerception {
         val facingDirection = getFacingDirection(yaw)
         val facingChinese = getFacingChinese(facingDirection)
 
-        // 1. 高度图感知 - 瞬间获取周围地形高度
-        val heightmap = scanHeightmap(level, pos, 10)
-
-        // 2. 多方向射线检测 - 360° 感知
-        val raycastResults = multiRaycast(level, player, 10)
-
-        // 3. 重要方块坐标
+        // 附近重要方块坐标（半径10格）
         val importantBlocks = findImportantBlocks(level, pos, 10)
 
-        // 4. 地形分析
-        val terrainInfo = analyzeTerrain(level, pos, heightmap)
+        // 地形分析
+        val terrainInfo = analyzeTerrain(level, pos)
 
-        // 5. 背包和主手
+        // 背包内容（只显示非空格子）
         val inventory = buildString {
             for (i in 0 until player.inventory.containerSize) {
                 val stack = player.inventory.getItem(i)
@@ -59,21 +56,21 @@ object WorldPerception {
             }
         }.ifEmpty { "  （空）" }
 
+        // 主手物品
         val mainHand = player.mainHandItem
         val mainHandStr = if (mainHand.isEmpty) "空手" else "${mainHand.hoverName.string} x${mainHand.count}"
 
-        // 6. 附近实体
-        val entities = level.getEntities(player, player.boundingBox.inflate(16.0)) { true }
-            .filter { it.type != EntityType.PLAYER }
+        // 附近实体（只显示敌对）
+        val hostileEntities = level.getEntities(player, player.boundingBox.inflate(16.0)) { true }
+            .filter { it.type != EntityType.PLAYER && it.type.category == MobCategory.MONSTER }
             .sortedBy { it.distanceTo(player) }
-            .take(10)
+            .take(5)
             .joinToString("\n") { entity ->
                 val dist = "%.1f".format(entity.distanceTo(player))
-                val hostile = if (entity.type.category == MobCategory.MONSTER) "⚠敌对" else "友好"
                 val entityPos = "(${entity.blockPosition().x}, ${entity.blockPosition().y}, ${entity.blockPosition().z})"
-                "  - ${entity.name.string} $entityPos ${dist}格 [$hostile]"
+                "  - ${entity.name.string} $entityPos ${dist}格"
             }
-            .ifEmpty { "  （无）" }
+            .ifEmpty { "  无" }
 
         // 时间
         val dayTime = (level.overworldClockTime % 24000).toInt()
@@ -93,10 +90,7 @@ object WorldPerception {
 时间：$timeStr
 主手物品：$mainHandStr
 
-=== 360° 射线检测（10格） ===
-$raycastResults
-
-=== 地形分析 ===
+=== 地形信息 ===
 $terrainInfo
 
 === 附近重要方块（带坐标） ===
@@ -105,90 +99,9 @@ $importantBlocks
 === 背包 ===
 $inventory
 
-=== 附近实体 ===
-$entities
+=== 附近敌对实体 ===
+$hostileEntities
 """.trimIndent()
-    }
-
-    /**
-     * 高度图扫描 - 获取周围地形高度。
-     * 使用 Minecraft 内置的高度图，效率极高。
-     */
-    private fun scanHeightmap(level: Level, center: BlockPos, radius: Int): Map<Pair<Int, Int>, Int> {
-        val heights = mutableMapOf<Pair<Int, Int>, Int>()
-
-        for (dx in -radius..radius) {
-            for (dz in -radius..radius) {
-                val x = center.x + dx
-                val z = center.z + dz
-                val chunk = level.getChunk(x shr 4, z shr 4)
-                val height = chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x and 15, z and 15)
-                heights[Pair(dx, dz)] = height
-            }
-        }
-
-        return heights
-    }
-
-    /**
-     * 多方向射线检测 - 360° 感知。
-     * 向 8 个水平方向 + 上下各发射一条射线。
-     */
-    private fun multiRaycast(level: Level, player: Player, distance: Int): String {
-        val eyePos = player.eyePosition
-        val results = mutableListOf<String>()
-
-        // 8 个水平方向
-        val directions = listOf(
-            "北" to Vec3(0.0, 0.0, -1.0),
-            "南" to Vec3(0.0, 0.0, 1.0),
-            "东" to Vec3(1.0, 0.0, 0.0),
-            "西" to Vec3(-1.0, 0.0, 0.0),
-            "东北" to Vec3(0.7, 0.0, -0.7),
-            "东南" to Vec3(0.7, 0.0, 0.7),
-            "西北" to Vec3(-0.7, 0.0, -0.7),
-            "西南" to Vec3(-0.7, 0.0, 0.7)
-        )
-
-        for ((name, dir) in directions) {
-            val endPos = eyePos.add(dir.scale(distance.toDouble()))
-            val hitResult = level.clip(ClipContext(
-                eyePos, endPos,
-                ClipContext.Block.VISUAL,
-                ClipContext.Fluid.NONE,
-                player
-            ))
-
-            if (hitResult.type == HitResult.Type.BLOCK) {
-                val blockPos = hitResult.blockPos
-                val blockName = level.getBlockState(blockPos).block.name.string
-                val hitDistance = eyePos.distanceTo(hitResult.location)
-                results.add("  $name: $blockName (${blockPos.x},${blockPos.y},${blockPos.z}) ${"%.1f".format(hitDistance)}格")
-            } else {
-                results.add("  $name: 无 (${distance}格内)")
-            }
-        }
-
-        // 向上检测
-        val upEnd = eyePos.add(0.0, distance.toDouble(), 0.0)
-        val upHit = level.clip(ClipContext(eyePos, upEnd, ClipContext.Block.VISUAL, ClipContext.Fluid.NONE, player))
-        if (upHit.type == HitResult.Type.BLOCK) {
-            val blockPos = upHit.blockPos
-            val blockName = level.getBlockState(blockPos).block.name.string
-            results.add("  上: $blockName (${blockPos.x},${blockPos.y},${blockPos.z})")
-        }
-
-        // 向下检测
-        val downEnd = eyePos.add(0.0, -distance.toDouble(), 0.0)
-        val downHit = level.clip(ClipContext(eyePos, downEnd, ClipContext.Block.VISUAL, ClipContext.Fluid.NONE, player))
-        if (downHit.type == HitResult.Type.BLOCK) {
-            val blockPos = downHit.blockPos
-            val blockName = level.getBlockState(blockPos).block.name.string
-            val hitDistance = eyePos.distanceTo(downHit.location)
-            results.add("  下: $blockName (${blockPos.x},${blockPos.y},${blockPos.z}) ${"%.1f".format(hitDistance)}格")
-        }
-
-        return results.joinToString("\n")
     }
 
     /**
@@ -218,13 +131,13 @@ $entities
             blocks.add("  - $name x${positions.size}: $coordStr")
         }
 
-        return if (blocks.isEmpty()) "  （无）" else blocks.joinToString("\n")
+        return if (blocks.isEmpty()) "  无" else blocks.joinToString("\n")
     }
 
     /**
-     * 地形分析 - 使用高度图数据。
+     * 地形分析。
      */
-    private fun analyzeTerrain(level: Level, pos: BlockPos, heightmap: Map<Pair<Int, Int>, Int>): String {
+    private fun analyzeTerrain(level: Level, pos: BlockPos): String {
         val info = mutableListOf<String>()
 
         // 脚下方块
@@ -243,9 +156,16 @@ $entities
             info.add("头顶：${aboveBlocks.joinToString(", ")}")
         }
 
-        // 地面高度（从高度图获取）
-        val currentHeight = heightmap[Pair(0, 0)] ?: pos.y
-        info.add("地面高度：Y=$currentHeight")
+        // 地面高度
+        var groundY = pos.y
+        for (y in pos.y downTo pos.y - 10) {
+            val block = level.getBlockState(BlockPos(pos.x, y, pos.z))
+            if (block.isSolidRender) {
+                groundY = y
+                break
+            }
+        }
+        info.add("地面高度：Y=$groundY")
 
         // 天空可见性
         var skyVisible = true
@@ -257,14 +177,6 @@ $entities
             }
         }
         info.add("天空可见：${if (skyVisible) "是" else "否"}")
-
-        // 周围地形高度变化
-        val heights = heightmap.values
-        val minHeight = heights.minOrNull() ?: pos.y
-        val maxHeight = heights.maxOrNull() ?: pos.y
-        if (maxHeight - minHeight > 3) {
-            info.add("地形起伏：Y=$minHeight ~ $maxHeight（高差${maxHeight - minHeight}格）")
-        }
 
         // 周围是否有树木
         var hasTree = false
