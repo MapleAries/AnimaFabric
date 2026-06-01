@@ -7,7 +7,10 @@ import kotlinx.serialization.json.*
 
 /**
  * 管线解析 + 执行。
- * 解析 LLM JSON 响应并执行工具调用管线。
+ * 解析 LLM 响应并执行命令。
+ * 支持两种格式：
+ * 1. 命令式格式：!toolName(param1, param2)
+ * 2. JSON 格式：{"action": "toolName", "parameters": {...}}
  */
 class PipelineExecutor(
     private val botName: String,
@@ -18,8 +21,11 @@ class PipelineExecutor(
 ) {
     private val sharedState = SharedState()
 
+    // 命令正则表达式：!commandName(param1, param2, ...)
+    private val commandRegex = Regex("""!(\w+)\(([^)]*)\)""")
+
     /**
-     * 处理用户指令：构建提示词、调用 LLM、解析响应、执行管线。
+     * 处理用户指令：构建提示词、调用 LLM、解析响应、执行命令。
      */
     suspend fun processCommand(command: String): String {
         // 1. 世界感知
@@ -27,7 +33,7 @@ class PipelineExecutor(
         val worldState = if (bot != null) {
             WorldPerception.scan(bot)
         } else {
-            "Bot 不在线"
+            "Bot not online"
         }
 
         // 2. 构建 LLM 请求
@@ -40,17 +46,17 @@ class PipelineExecutor(
         // 3. 调用 LLM（流式）
         val llmResponse = llmClient.chatStream(messages)
 
-        // 4. 记录思考内容到控制台（不显示在游戏内）
+        // 4. 记录思考内容到控制台
         if (llmResponse.thinking.isNotBlank()) {
-            println("[MC-Mind] LLM 思考过程: ${llmResponse.thinking.take(200)}...")
+            println("[MC-Mind] LLM thinking: ${llmResponse.thinking.take(200)}...")
         }
 
         // 5. 检查实际输出
         if (llmResponse.content.isBlank()) {
-            return "LLM 未返回有效内容，请重试。"
+            return "LLM returned no content, please try again."
         }
 
-        println("[MC-Mind] LLM 实际输出: ${llmResponse.content}")
+        println("[MC-Mind] LLM output: ${llmResponse.content}")
 
         // 6. 解析响应
         val parsed = parseResponse(llmResponse.content)
@@ -59,13 +65,12 @@ class PipelineExecutor(
         // 7. 执行
         return when (parsed) {
             is ParsedResponse.Success -> {
-                // 显示计划
-                sendChatMessage("${parsed.plan}")
-                // 执行任务
-                executeTasks(parsed.tasks)
-            }
-            is ParsedResponse.Clarification -> {
-                parsed.message
+                // 显示自然语言部分
+                if (parsed.message.isNotBlank()) {
+                    sendChatMessage(parsed.message)
+                }
+                // 执行命令
+                executeCommands(parsed.commands)
             }
             is ParsedResponse.Error -> {
                 parsed.message
@@ -98,11 +103,32 @@ class PipelineExecutor(
     /**
      * 解析 LLM 响应。
      * 支持两种格式：
-     * 1. 新格式：{"reasoning": "...", "plan": "...", "tasks": [...]}
-     * 2. 旧格式：{"tool": "...", "parameters": {...}} 或 {"pipeline": [...]}
+     * 1. 命令式格式：!toolName(param1, param2)
+     * 2. JSON 格式：{"action": "toolName", "parameters": {...}}
      */
     private fun parseResponse(response: String): ParsedResponse {
-        return try {
+        val commands = mutableListOf<ParsedCommand>()
+        var message = response
+
+        // 尝试解析命令式格式
+        val matches = commandRegex.findAll(response)
+        for (match in matches) {
+            val toolName = match.groupValues[1]
+            val paramsStr = match.groupValues[2]
+            val params = parseParams(paramsStr)
+            commands.add(ParsedCommand(toolName, params))
+
+            // 从消息中移除命令部分
+            message = message.replace(match.value, "").trim()
+        }
+
+        // 如果找到命令，返回成功
+        if (commands.isNotEmpty()) {
+            return ParsedResponse.Success(message, commands)
+        }
+
+        // 尝试解析 JSON 格式
+        try {
             val jsonStr = extractJson(response)
             val element = Json.parseToJsonElement(jsonStr)
             val obj = element.jsonObject
@@ -110,44 +136,60 @@ class PipelineExecutor(
             when {
                 // 新格式：reasoning + plan + tasks
                 "tasks" in obj -> {
-                    val plan = obj["plan"]?.jsonPrimitive?.content ?: "执行任务"
+                    val plan = obj["plan"]?.jsonPrimitive?.content ?: ""
                     val tasks = obj["tasks"]!!.jsonArray.map { parseTask(it.jsonObject) }
-                    ParsedResponse.Success(plan, tasks)
+                    return ParsedResponse.Success(plan, tasks)
                 }
                 // 旧格式：单个工具调用
-                "tool" in obj -> {
+                "tool" in obj || "action" in obj -> {
                     val task = parseTask(obj)
-                    ParsedResponse.Success("执行 ${task.tool}", listOf(task))
+                    return ParsedResponse.Success("", listOf(task))
                 }
                 // 旧格式：管线
                 "pipeline" in obj -> {
                     val tasks = obj["pipeline"]!!.jsonArray.map { parseTask(it.jsonObject) }
-                    ParsedResponse.Success("执行管线", tasks)
+                    return ParsedResponse.Success("", tasks)
                 }
                 // 澄清请求
                 "clarification" in obj -> {
-                    ParsedResponse.Clarification(obj["clarification"]!!.jsonPrimitive.content)
+                    return ParsedResponse.Success(obj["clarification"]!!.jsonPrimitive.content, emptyList())
                 }
-                else -> ParsedResponse.Error("无法解析 LLM 响应：$response")
             }
         } catch (e: Exception) {
-            // 如果 JSON 解析失败，检查是否是自然语言回复
-            if (response.isNotBlank() && !response.trimStart().startsWith("{")) {
-                println("[MC-Mind] LLM 返回自然语言，作为澄清请求处理")
-                ParsedResponse.Clarification(response)
-            } else {
-                ParsedResponse.Error("解析 LLM 响应失败：${e.message}")
-            }
+            // JSON 解析失败，尝试作为自然语言回复
         }
+
+        // 如果没有找到命令，返回自然语言消息
+        return ParsedResponse.Success(response, emptyList())
     }
 
     /**
-     * 解析单个任务。
-     * 支持两种格式：
-     * 1. 新格式：{"action": "...", "parameters": {...}}
-     * 2. 旧格式：{"tool": "...", "parameters": {...}}
+     * 解析命令参数。
+     * 支持：数字、字符串、布尔值
      */
-    private fun parseTask(obj: JsonObject): PipelineStep {
+    private fun parseParams(paramsStr: String): Map<String, Any> {
+        val params = mutableMapOf<String, Any>()
+        if (paramsStr.isBlank()) return params
+
+        val parts = paramsStr.split(",").map { it.trim() }
+        for ((index, part) in parts.withIndex()) {
+            val value = when {
+                part.equals("true", ignoreCase = true) -> true
+                part.equals("false", ignoreCase = true) -> false
+                part.toDoubleOrNull() != null -> part.toDouble()
+                part.startsWith("\"") && part.endsWith("\"") -> part.substring(1, part.length - 1)
+                else -> part
+            }
+            params["param$index"] = value
+        }
+
+        return params
+    }
+
+    /**
+     * 解析 JSON 任务。
+     */
+    private fun parseTask(obj: JsonObject): ParsedCommand {
         val tool = (obj["action"] ?: obj["tool"])!!.jsonPrimitive.content
         val params = mutableMapOf<String, Any>()
         obj["parameters"]?.jsonObject?.forEach { (key, value) ->
@@ -162,33 +204,32 @@ class PipelineExecutor(
                 else -> value.toString()
             }
         }
-        println("[MC-Mind] 解析任务: action=$tool, params=$params")
-        return PipelineStep(tool, params)
+        return ParsedCommand(tool, params)
     }
 
     /**
-     * 执行任务列表。
+     * 执行命令列表。
      */
-    private suspend fun executeTasks(tasks: List<PipelineStep>): String {
+    private suspend fun executeCommands(commands: List<ParsedCommand>): String {
         val results = mutableListOf<String>()
 
-        for ((index, task) in tasks.withIndex()) {
+        for ((index, command) in commands.withIndex()) {
             val resolvedParams = sharedState.resolveAll(
-                task.params.mapValues { it.value.toString() }
+                command.params.mapValues { it.value.toString() }
             )
 
-            val result = actionExecutor.execute(task.tool, resolvedParams)
-            results.add("步骤 ${index + 1} [${task.tool}]: $result")
+            val result = actionExecutor.execute(command.tool, resolvedParams)
+            results.add("Step ${index + 1} [${command.tool}]: $result")
 
             // 更新共享状态
-            if (task.tool == "moveTo") {
+            if (command.tool == "moveTo") {
                 sharedState.set("moveTo_result", result)
-            } else if (task.tool == "mineBlock") {
+            } else if (command.tool == "mineBlock") {
                 sharedState.set("mineBlock_result", result)
             }
 
             // 如果步骤失败，停止执行
-            if (result.startsWith("失败") || result.startsWith("错误") || result.startsWith("挖掘失败")) {
+            if (result.startsWith("Failed") || result.startsWith("Error") || result.startsWith("Mining failed")) {
                 break
             }
         }
@@ -205,14 +246,13 @@ class PipelineExecutor(
         return text.substring(start, end + 1)
     }
 
-    data class PipelineStep(
+    data class ParsedCommand(
         val tool: String,
         val params: Map<String, Any>
     )
 
     sealed class ParsedResponse {
-        data class Success(val plan: String, val tasks: List<PipelineStep>) : ParsedResponse()
-        data class Clarification(val message: String) : ParsedResponse()
+        data class Success(val message: String, val commands: List<ParsedCommand>) : ParsedResponse()
         data class Error(val message: String) : ParsedResponse()
     }
 }

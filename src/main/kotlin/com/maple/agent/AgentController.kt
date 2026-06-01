@@ -17,6 +17,7 @@ class AgentController(private val config: MCMindConfig, private val server: Mine
     private val memories = ConcurrentHashMap<String, ConversationMemory>()
     private val scopes = ConcurrentHashMap<String, CoroutineScope>()
     private val jobs = ConcurrentHashMap<String, Job>()
+    private val behaviorModes = ConcurrentHashMap<String, BehaviorModes>()
 
     /**
      * 获取所有可用的假人名称。
@@ -38,12 +39,15 @@ class AgentController(private val config: MCMindConfig, private val server: Mine
 
         val botName = bot.name.string
 
-        // 确保有协程作用域
+        // 确保有协程作用域和行为模式
         if (!scopes.containsKey(botName)) {
             scopes[botName] = CoroutineScope(Dispatchers.Default + SupervisorJob())
         }
         if (!memories.containsKey(botName)) {
-            memories[botName] = ConversationMemory(config.maxHistoryTurns)
+            memories[botName] = ConversationMemory(config.maxHistoryTurns, llmClient)
+        }
+        if (!behaviorModes.containsKey(botName)) {
+            behaviorModes[botName] = BehaviorModes(botName, server)
         }
 
         val scope = scopes[botName]!!
@@ -122,6 +126,7 @@ class AgentController(private val config: MCMindConfig, private val server: Mine
         scopes[botName]?.cancel()
         scopes.remove(botName)
         memories.remove(botName)
+        behaviorModes.remove(botName)
         FakePlayerManager.kill(server, name)
     }
 
@@ -133,6 +138,7 @@ class AgentController(private val config: MCMindConfig, private val server: Mine
         FakePlayerManager.killAll(server)
         scopes.clear()
         memories.clear()
+        behaviorModes.clear()
     }
 
     /**
@@ -149,5 +155,13 @@ class AgentController(private val config: MCMindConfig, private val server: Mine
     fun clearMemory(name: String) {
         val bot = FakePlayerManager.getBot(server, name) ?: return
         memories[bot.name.string]?.clear()
+    }
+
+    /**
+     * 获取假人的行为模式。
+     */
+    fun getBehaviorModes(name: String): BehaviorModes? {
+        val bot = FakePlayerManager.getBot(server, name) ?: return null
+        return behaviorModes[bot.name.string]
     }
 }
