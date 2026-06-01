@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 主控制器：接收指令 → 判断类型 → 分发到简单执行器或 LLM 规划器。
- * 控制 carpet 生成的假人，不再自己生成。
+ * 直接管理 FakePlayer 实例，不依赖外部 mod。
  */
 class AgentController(private val config: AnimaFabricConfig, private val server: MinecraftServer) {
 
@@ -33,7 +33,7 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
     fun sendCommand(name: String, command: String, onComplete: (String) -> Unit) {
         val bot = FakePlayerManager.getBot(server, name)
         if (bot == null) {
-            onComplete("假人 '$name' 不存在。请先使用 /player <name> spawn 生成假人。")
+            onComplete("假人 '$name' 不存在。请使用 /ai spawn <名称> 生成假人。")
             return
         }
 
@@ -63,13 +63,11 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
             try {
                 val result = when (commandType) {
                     is CommandRouter.CommandType.Simple -> {
-                        // 简单指令：直接执行
                         println("[AnimaFabric] 简单指令: ${commandType.action}")
                         val executor = SimpleCommandExecutor(botName, server)
                         executor.execute(commandType.action, commandType.groups)
                     }
                     is CommandRouter.CommandType.Complex -> {
-                        // 复杂指令：LLM 规划
                         println("[AnimaFabric] 复杂指令，交给 LLM 规划")
                         val memory = memories[botName]!!
                         val actionExecutor = ActionExecutor(botName, server)
@@ -100,12 +98,9 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
         jobs[botName]?.cancel()
         jobs.remove(botName)
 
-        try {
-            server.getCommands().performPrefixedCommand(
-                server.createCommandSourceStack(),
-                "/player $botName stop"
-            )
-        } catch (_: Exception) {}
+        // 直接通过 ActionPack 停止
+        val fakePlayer = FakePlayerManager.getFakePlayer(name)
+        fakePlayer?.actionPack?.stopAll()
     }
 
     /**
@@ -120,8 +115,7 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
      */
     fun kill(name: String) {
         stop(name)
-        val bot = FakePlayerManager.getBot(server, name) ?: return
-        val botName = bot.name.string
+        val botName = FakePlayerManager.getBot(server, name)?.name?.string ?: name
 
         scopes[botName]?.cancel()
         scopes.remove(botName)

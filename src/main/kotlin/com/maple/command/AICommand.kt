@@ -3,6 +3,7 @@ package com.maple.command
 import com.maple.agent.AgentController
 import com.maple.config.AnimaFabricConfig
 import com.maple.entity.FakePlayerManager
+import net.minecraft.server.level.ServerPlayer
 import com.mojang.brigadier.Command
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
@@ -48,6 +49,11 @@ object AICommand {
                     .then(Commands.literal("killall")
                         .executes { killAllBots(it) }
                     )
+                    .then(Commands.literal("spawn")
+                        .then(Commands.argument("name", StringArgumentType.word())
+                            .executes { spawnBot(it) }
+                        )
+                    )
                     .then(Commands.literal("config")
                         .then(Commands.literal("show")
                             .executes { showConfig(it) }
@@ -87,7 +93,7 @@ object AICommand {
         }
 
         if (!FakePlayerManager.exists(context.source.server, name)) {
-            context.source.sendFailure(Component.literal("假人 '$name' 不存在。请先使用 /player <name> spawn 生成假人。"))
+            context.source.sendFailure(Component.literal("假人 '$name' 不存在。请使用 /ai spawn <名称> 生成假人。"))
             return 0
         }
 
@@ -139,7 +145,7 @@ object AICommand {
         val names = FakePlayerManager.listNames(context.source.server)
         if (names.isEmpty()) {
             context.source.sendSuccess({
-                Component.literal("当前没有假人。请使用 /player <name> spawn 生成假人。")
+                Component.literal("当前没有假人。请使用 /ai spawn <名称> 生成假人。")
             }, false)
         } else {
             context.source.sendSuccess({
@@ -156,6 +162,32 @@ object AICommand {
         context.source.sendSuccess({
             Component.literal("已移除所有 $count 个假人")
         }, true)
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun spawnBot(context: CommandContext<CommandSourceStack>): Int {
+        val name = StringArgumentType.getString(context, "name")
+        val source = context.source
+
+        if (FakePlayerManager.exists(source.server, name)) {
+            source.sendFailure(Component.literal("假人 '$name' 已存在"))
+            return 0
+        }
+
+        // 在命令执行者当前位置生成
+        val player = source.playerOrException
+        val pos = player.position()
+
+        try {
+            FakePlayerManager.spawn(source.server, name, pos.x, pos.y, pos.z)
+            source.sendSuccess({
+                Component.literal("已生成假人 '[AI] $name' 在 (${pos.x.toInt()}, ${pos.y.toInt()}, ${pos.z.toInt()})")
+            }, true)
+        } catch (e: Exception) {
+            source.sendFailure(Component.literal("生成假人失败: ${e.message}"))
+            return 0
+        }
+
         return Command.SINGLE_SUCCESS
     }
 
