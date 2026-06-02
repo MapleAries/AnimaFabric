@@ -117,15 +117,23 @@ class LLMClient(private val config: AnimaFabricConfig) {
      * 3. 如果 content 为空，从 reasoning_content 中提取
      */
     private fun processResponse(thinking: String, content: String): String {
-        // 如果有实际内容，直接使用
+        // 如果有实际内容，先尝试从中提取 JSON
         if (content.isNotBlank()) {
-            return extractJson(content)
+            val result = extractJson(content)
+            if (result.isNotBlank()) return result
         }
 
-        // 如果只有思考内容，从中提取 JSON
+        // content 中没有有效 JSON，尝试从思考内容中提取
         if (thinking.isNotBlank()) {
-            logger.info("[AnimaFabric] 只有思考内容，尝试从中提取 JSON")
-            return extractJsonFromThinking(thinking)
+            logger.info("[AnimaFabric] 从思考内容中提取 JSON（content 无有效 JSON）")
+            val result = extractJsonFromThinking(thinking)
+            if (result.isNotBlank()) return result
+        }
+
+        // 最后兜底：content 中有命令格式（!tool(...)），直接返回
+        if (content.isNotBlank() && content.contains("!")) {
+            logger.info("[AnimaFabric] 返回包含命令的原始内容")
+            return content
         }
 
         return ""
@@ -159,10 +167,18 @@ class LLMClient(private val config: AnimaFabricConfig) {
      * 尝试多种方式提取 JSON。
      */
     private fun extractJsonFromThinking(thinking: String): String {
-        // 方式1：找最后一个完整的 JSON 对象（包含 pipeline 或 tool）
+        // 方式1：找命令格式 !toolName(param1, param2)
+        val commandPattern = Regex("""!(\w+)\([^)]*\)""")
+        val commandMatches = commandPattern.findAll(thinking).toList()
+        if (commandMatches.isNotEmpty()) {
+            val result = commandMatches.joinToString(" ") { it.value }
+            logger.info("[AnimaFabric] 从思考内容提取的命令: {}", result)
+            return result
+        }
+
+        // 方式2：找最后一个完整的 JSON 对象（包含 pipeline 或 tool 或 action）
         val lastBrace = thinking.lastIndexOf('}')
         if (lastBrace != -1) {
-            // 向前找匹配的 {
             var braceCount = 0
             var start = lastBrace
             for (i in lastBrace downTo 0) {
@@ -178,31 +194,23 @@ class LLMClient(private val config: AnimaFabricConfig) {
 
             if (braceCount == 0) {
                 val jsonStr = thinking.substring(start, lastBrace + 1)
-                // 验证是否包含 tool 或 pipeline
-                if (jsonStr.contains("\"tool\"") || jsonStr.contains("\"pipeline\"")) {
+                if (jsonStr.contains("\"tool\"") || jsonStr.contains("\"pipeline\"") ||
+                    jsonStr.contains("\"action\"") || jsonStr.contains("\"goal\"")) {
                     logger.info("[AnimaFabric] 从思考内容提取的 JSON: {}", jsonStr.take(200))
                     return jsonStr
                 }
             }
         }
 
-        // 方式2：用正则找 JSON 对象
-        val jsonPattern = Regex("""\{[\s\S]*"tool"[\s\S]*\}""")
+        // 方式3：用正则找 JSON 对象
+        val jsonPattern = Regex("""\{[\s\S]*"(tool|action|pipeline|goal)"[\s\S]*\}""")
         val match = jsonPattern.find(thinking)
         if (match != null) {
             logger.info("[AnimaFabric] 用正则提取的 JSON: {}", match.value.take(200))
             return match.value
         }
 
-        // 方式3：找 pipeline 对象
-        val pipelinePattern = Regex("""\{[\s\S]*"pipeline"[\s\S]*\}""")
-        val pipelineMatch = pipelinePattern.find(thinking)
-        if (pipelineMatch != null) {
-            logger.info("[AnimaFabric] 用正则提取的 pipeline JSON: {}", pipelineMatch.value.take(200))
-            return pipelineMatch.value
-        }
-
-        logger.warn("[AnimaFabric] 无法从思考内容中提取 JSON")
+        logger.warn("[AnimaFabric] 无法从思考内容中提取有效内容")
         return ""
     }
 }
