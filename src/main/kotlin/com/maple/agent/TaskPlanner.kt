@@ -163,31 +163,33 @@ $worldState
 
         val completed = completedResults.joinToString("\n")
 
-        val prompt = """你是一个 Minecraft AI 任务规划器。之前的执行遇到了问题，请重新规划剩余步骤。
+        val prompt = """重新规划Minecraft任务。每行一个命令。
 
-## 原始任务
-$originalTask
+原始任务：$originalTask
+已完成：$completed
+当前状态：$worldState
 
-## 当前世界状态
-$worldState
+可用命令：!moveTo(x,y,z) !move(dir,n) !mineBlock(x,y,z) !craft(item) !scanArea(r) !getInventory() !use() !msg(text)
 
-## 已完成的步骤
-$completed
-
-## 要求
-1. 根据已完成的步骤和当前状态，规划剩余步骤
-2. 每行格式：步骤描述 | !命令
-3. 最多 5 个步骤
-4. 避免重复已失败的操作
+示例输出：
+!scanArea(10)
+!mineBlock(10,65,-5)
 """
 
         val messages = listOf(
             ChatMessage("system", prompt),
-            ChatMessage("user", "请重新规划剩余步骤")
+            ChatMessage("user", "继续执行剩余步骤")
         )
 
         val response = llmClient.chatStream(messages)
-        return parseSteps(response.content)
+        println("[AnimaFabric] 重规划结果: content=${response.content.take(200)}, thinking=${response.thinking.take(200)}")
+
+        // 尝试从 content 提取
+        val steps = parseSteps(response.content)
+        if (steps.isNotEmpty()) return steps
+
+        // fallback: 从 thinking 提取
+        return parseSteps(response.thinking)
     }
 
     /**
