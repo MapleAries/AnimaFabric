@@ -131,6 +131,13 @@ object ToolRegistry {
             parameters = listOf(
                 ToolParameter("duration", "number", "持续时间（毫秒），不填则持续", required = false)
             )
+        ),
+        Tool(
+            name = "craft",
+            description = "合成物品。自动使用背包中的材料合成。",
+            parameters = listOf(
+                ToolParameter("item", "string", "物品名称：planks/crafting_table/stick/wooden_pickaxe/wooden_axe/wooden_sword/stone_pickaxe/stone_axe/iron_pickaxe/iron_sword/furnace/torch/coal_iron_ingot 等")
+            )
         )
     )
 

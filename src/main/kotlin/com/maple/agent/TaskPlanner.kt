@@ -118,28 +118,41 @@ class TaskPlanner(
 ## 当前世界状态
 $worldState
 
-## 可用命令
+## 可用命令（只能使用以下命令，其他命令无效）
 !moveTo(x, y, z) — 移动到坐标
 !move(direction, 格数) — 短距离移动（forward/backward/left/right）
 !turn(direction) — 转向（left/right/back）
 !jump() — 跳跃
 !sneak() — 切换潜行
-!mineBlock(x, y, z) — 挖掘方块
+!mineBlock(x, y, z) — 挖掘方块（距离≤5格）
 !placeBlock(x, y, z, block) — 放置方块
+!craft(item) — 合成物品（如 craft planks, craft crafting_table, craft wooden_pickaxe）
 !scanArea(radius) — 扫描周围
 !getInventory() — 查看背包
 !attack() — 攻击
-!use() — 使用物品
+!use() — 使用物品（打开工作台等）
 !sendMessage(msg) — 发送消息
+
+## 重要约束
+- 只能使用上面列出的命令
+- 不要使用 !craft(minecraft:xxx) 格式，用简写如 !craft(planks)
+- 合成木镐需要：先挖木头→合成木板→合成工作台→放置工作台→用工作台合成木镐
+- 挖掘前先用 !scanArea 找到目标方块的坐标
 
 ## 输出格式
 每行一个命令，直接输出 !命令，不要输出其他内容。
 
 ## 示例
-输入："走到树旁边挖木头"
+输入："挖木头做木镐"
+!scanArea(10)
 !moveTo(10, 64, -5)
 !mineBlock(10, 65, -5)
 !mineBlock(10, 64, -5)
+!craft(planks)
+!craft(crafting_table)
+!placeBlock(10, 63, -5, crafting_table)
+!use()
+!craft(wooden_pickaxe)
 
 输入："蹲下然后站起来"
 !sneak()

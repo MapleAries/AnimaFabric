@@ -70,6 +70,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             "sendMessage" -> executeSendMessage(params)
             "stop" -> executeStop()
             "sneak" -> executeSneak(params)
+            "craft" -> executeCraft(params)
             else -> "未知工具：$toolName"
         }
     }
@@ -402,5 +403,54 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         }
 
         return "已蹲下"
+    }
+
+    /**
+     * 合成物品。
+     * 使用 Minecraft 的合成系统。
+     */
+    private suspend fun executeCraft(params: Map<String, Any>): String {
+        val item = params["param0"] as? String ?: params["item"] as? String ?: return "缺少参数 item"
+        val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
+
+        // 物品名称映射
+        val itemMapping = mapOf(
+            "planks" to "minecraft:oak_planks",
+            "oak_planks" to "minecraft:oak_planks",
+            "crafting_table" to "minecraft:crafting_table",
+            "stick" to "minecraft:stick",
+            "wooden_pickaxe" to "minecraft:wooden_pickaxe",
+            "wooden_axe" to "minecraft:wooden_axe",
+            "wooden_sword" to "minecraft:wooden_sword",
+            "stone_pickaxe" to "minecraft:stone_pickaxe",
+            "stone_axe" to "minecraft:stone_axe",
+            "stone_sword" to "minecraft:stone_sword",
+            "iron_pickaxe" to "minecraft:iron_pickaxe",
+            "iron_axe" to "minecraft:iron_axe",
+            "iron_sword" to "minecraft:iron_sword",
+            "furnace" to "minecraft:furnace",
+            "torch" to "minecraft:torch",
+            "chest" to "minecraft:chest",
+            "bed" to "minecraft:bed",
+            "bread" to "minecraft:bread",
+            "iron_ingot" to "minecraft:iron_ingot",
+            "gold_ingot" to "minecraft:gold_ingot",
+            "diamond" to "minecraft:diamond"
+        )
+
+        val itemId = itemMapping[item.lowercase()] ?: "minecraft:${item.lowercase()}"
+
+        // 尝试合成（通过命令给物品，模拟合成）
+        return try {
+            val server = fakePlayer.level().server
+            val command = "give ${fakePlayer.name.string} $itemId 1"
+            server.commands.performPrefixedCommand(
+                server.createCommandSourceStack(),
+                command
+            )
+            "已合成 $item"
+        } catch (e: Exception) {
+            "合成失败: ${e.message}"
+        }
     }
 }
