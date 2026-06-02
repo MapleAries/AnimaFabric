@@ -22,6 +22,37 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
      * 执行单个工具调用，返回执行结果。
      */
     suspend fun execute(toolName: String, params: Map<String, Any>): String {
+        // 将位置参数（param0, param1...）映射为命名参数
+        val resolvedParams = resolvePositionalParams(toolName, params)
+        return executeInternal(toolName, resolvedParams)
+    }
+
+    /**
+     * 将位置参数映射为命名参数。
+     * 例如 move 工具：param0 -> direction, param1 -> ticks
+     */
+    private fun resolvePositionalParams(toolName: String, params: Map<String, Any>): Map<String, Any> {
+        // 如果已经有命名参数，直接返回
+        if (params.keys.none { it.startsWith("param") }) return params
+
+        val tool = ToolRegistry.getTool(toolName) ?: return params
+        val resolved = mutableMapOf<String, Any>()
+
+        for ((key, value) in params) {
+            if (key.startsWith("param")) {
+                val index = key.removePrefix("param").toIntOrNull() ?: continue
+                if (index < tool.parameters.size) {
+                    resolved[tool.parameters[index].name] = value
+                }
+            } else {
+                resolved[key] = value
+            }
+        }
+
+        return resolved
+    }
+
+    private suspend fun executeInternal(toolName: String, params: Map<String, Any>): String {
         return when (toolName) {
             "moveTo" -> executeMoveTo(params)
             "move" -> executeMove(params)
