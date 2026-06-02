@@ -416,9 +416,24 @@ class PipelineExecutor(
      * 执行命令列表，返回每个步骤的结果。
      */
     private suspend fun executeCommands(commands: List<ParsedCommand>): List<StepResult> {
+        // 去重：移除连续重复的命令（如多个 !sneak()）
+        val deduplicated = mutableListOf<ParsedCommand>()
+        for (cmd in commands) {
+            val last = deduplicated.lastOrNull()
+            if (last == null || last.tool != cmd.tool || last.params != cmd.params) {
+                deduplicated.add(cmd)
+            }
+        }
+
+        // 限制最多 6 个命令
+        val limited = deduplicated.take(6)
+        if (limited.size < commands.size) {
+            println("[AnimaFabric] 命令去重/限制: ${commands.size} → ${limited.size}")
+        }
+
         val results = mutableListOf<StepResult>()
 
-        for ((index, command) in commands.withIndex()) {
+        for ((index, command) in limited.withIndex()) {
             val resolvedParams = sharedState.resolveAll(
                 command.params.mapValues { it.value.toString() }
             )

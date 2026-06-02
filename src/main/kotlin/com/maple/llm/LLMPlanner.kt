@@ -79,6 +79,14 @@ Use JSON format with `goal` and `steps`. This supports loops, conditionals, and 
 6. Never mine terrain blocks (dirt, grass, stone) unless specifically asked
 7. Never mine the block directly under your feet (Y-1)
 
+## IMPORTANT: Minimal Commands
+
+- Generate the MINIMUM number of commands needed. Do NOT repeat commands.
+- Each command executes sequentially. One !move(forward, 5) is enough — do NOT chain multiple !move calls.
+- !sneak() toggles sneak. One call turns it on, the next turns it off. Do NOT use multiple !sneak() calls.
+- For "move then sneak then stand up": generate exactly `!move(forward, 5) !sneak() !sneak()` — 3 commands total.
+- NEVER generate more than 6 commands in a single response. If the task is complex, use Format 2 (JSON action plan).
+
 ## When to use Format 2 (Structured Plan)
 
 Use the structured JSON plan when:
