@@ -68,7 +68,7 @@ object ToolRegistry {
         ),
         Tool(
             name = "mineBlock",
-            description = "挖掘指定坐标的方块。距离必须≤5格，否则先用moveTo靠近。",
+            description = "挖掘指定坐标的方块。距离必须≤6格，否则先用moveTo靠近。",
             parameters = listOf(
                 ToolParameter("x", "number", "方块 X 坐标"),
                 ToolParameter("y", "number", "方块 Y 坐标"),

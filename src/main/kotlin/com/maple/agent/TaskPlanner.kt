@@ -50,7 +50,11 @@ class TaskPlanner(
         // 1. 分解任务
         val decomposed = decomposeTask(command)
         if (decomposed.isEmpty()) {
-            return "无法分解任务：$command"
+            // 分解失败，fallback 到 PipelineExecutor
+            println("[AnimaFabric] TaskPlanner 分解失败，fallback 到 PipelineExecutor")
+            val memory = ConversationMemory(10, llmClient)
+            val pipeline = PipelineExecutor(botName, server, llmClient, memory, actionExecutor)
+            return pipeline.processCommand(command)
         }
 
         steps.clear()
@@ -113,54 +117,30 @@ class TaskPlanner(
         val bot = server.playerList.getPlayerByName(botName)
         val worldState = if (bot != null) WorldPerception.scan(bot) else "Bot not online"
 
-        val prompt = """你是一个 Minecraft AI 任务规划器。将任务分解为命令步骤。
+        val prompt = """将Minecraft任务分解为命令步骤。每行一个命令，只输出命令。
 
-## 当前世界状态
-$worldState
+可用命令：
+!moveTo(x,y,z) !move(dir,n) !turn(dir) !jump() !sneak()
+!mineBlock(x,y,z) !placeBlock(x,y,z,block) !craft(item)
+!scanArea(r) !getInventory() !attack() !use() !msg(text)
 
-## 可用命令（只能使用以下命令，其他命令无效）
-!moveTo(x, y, z) — 移动到坐标
-!move(direction, 格数) — 短距离移动（forward/backward/left/right）
-!turn(direction) — 转向（left/right/back）
-!jump() — 跳跃
-!sneak() — 切换潜行
-!mineBlock(x, y, z) — 挖掘方块（距离≤5格）
-!placeBlock(x, y, z, block) — 放置方块
-!craft(item) — 合成物品（如 craft planks, craft crafting_table, craft wooden_pickaxe）
-!scanArea(radius) — 扫描周围
-!getInventory() — 查看背包
-!attack() — 攻击
-!use() — 使用物品（打开工作台等）
-!sendMessage(msg) — 发送消息
-
-## 重要约束
-- 只能使用上面列出的命令
-- 不要使用 !craft(minecraft:xxx) 格式，用简写如 !craft(planks)
-- 合成木镐需要：先挖木头→合成木板→合成工作台→放置工作台→用工作台合成木镐
-- 挖掘前先用 !scanArea 找到目标方块的坐标
-
-## 输出格式
-每行一个命令，直接输出 !命令，不要输出其他内容。
-
-## 示例
-输入："挖木头做木镐"
+示例：
+任务：挖木头做木镐
+输出：
 !scanArea(10)
-!moveTo(10, 64, -5)
-!mineBlock(10, 65, -5)
-!mineBlock(10, 64, -5)
+!mineBlock(10,65,-5)
+!mineBlock(10,64,-5)
 !craft(planks)
 !craft(crafting_table)
-!placeBlock(10, 63, -5, crafting_table)
-!use()
 !craft(wooden_pickaxe)
 
-输入："蹲下然后站起来"
+任务：蹲下然后站起来
+输出：
 !sneak()
 !sneak()
 
-输入："往前走5步跳一下"
-!move(forward, 5)
-!jump()
+当前世界状态：
+$worldState
 """
 
         val messages = listOf(

@@ -120,26 +120,63 @@ class LLMClient(private val config: AnimaFabricConfig) {
      * 3. 如果 content 为空，从 reasoning_content 中提取
      */
     private fun processResponse(thinking: String, content: String): String {
-        // 如果有实际内容，先尝试从中提取 JSON
+        // 如果有实际内容，先尝试从中提取
         if (content.isNotBlank()) {
-            val result = extractJson(content)
-            if (result.isNotBlank()) return result
-        }
-
-        // content 中没有有效 JSON，尝试从思考内容中提取
-        if (thinking.isNotBlank()) {
-            logger.info("[AnimaFabric] 从思考内容中提取 JSON（content 无有效 JSON）")
-            val result = extractJsonFromThinking(thinking)
-            if (result.isNotBlank()) return result
-        }
-
-        // 最后兜底：content 中有命令格式（!tool(...)），直接返回
-        if (content.isNotBlank() && content.contains("!")) {
-            logger.info("[AnimaFabric] 返回包含命令的原始内容")
+            // 尝试提取 JSON
+            val jsonResult = extractJson(content)
+            if (jsonResult.isNotBlank()) return jsonResult
+            // 尝试提取命令
+            val cmdResult = extractCommands(content)
+            if (cmdResult.isNotBlank()) return cmdResult
+            // 直接返回原始内容
             return content
         }
 
+        // content 为空，从思考内容中提取
+        if (thinking.isNotBlank()) {
+            logger.info("[AnimaFabric] 从思考内容中提取（content 为空）")
+            // 先尝试提取命令
+            val cmdResult = extractCommands(thinking)
+            if (cmdResult.isNotBlank()) {
+                logger.info("[AnimaFabric] 从思考内容提取到命令")
+                return cmdResult
+            }
+            // 再尝试提取 JSON
+            val jsonResult = extractJsonFromThinking(thinking)
+            if (jsonResult.isNotBlank()) return jsonResult
+        }
+
         return ""
+    }
+
+    /**
+     * 从文本中提取所有 !tool(args) 命令。
+     * 过滤掉工具描述（包含类型注解的）。
+     */
+    private fun extractCommands(text: String): String {
+        val commandPattern = Regex("""!(\w+)\(([^)]*)\)""")
+        val typePattern = Regex("""\w+:\s*(string|number|boolean|int|float|double)""")
+        val nameOnlyPattern = Regex("""^[a-zA-Z_]+$""")
+
+        val commands = commandPattern.findAll(text)
+            .filter { match ->
+                val args = match.groupValues[2].trim()
+                if (args.isEmpty()) return@filter true // 无参数命令如 !jump()
+                // 过滤类型注解
+                if (typePattern.containsMatchIn(args)) return@filter false
+                // 过滤纯参数名（如 direction, ticks）
+                val parts = args.split(",").map { it.trim() }
+                val allNames = parts.all { it.isNotEmpty() && nameOnlyPattern.matches(it) }
+                !allNames
+            }
+            .map { it.value }
+            .toList()
+
+        return if (commands.isNotEmpty()) {
+            commands.joinToString(" ")
+        } else {
+            ""
+        }
     }
 
     /**

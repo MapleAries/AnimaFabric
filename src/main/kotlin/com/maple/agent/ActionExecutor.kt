@@ -258,8 +258,8 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val blockCenter = net.minecraft.world.phys.Vec3.atCenterOf(targetPos)
         val distance = eyePos.distanceTo(blockCenter)
 
-        if (distance > 5.0) {
-            return "挖掘失败：方块太远（${"%.2f".format(distance)}格，最大 5.0 格），请先靠近。"
+        if (distance > 6.0) {
+            return "挖掘失败：方块太远（${"%.2f".format(distance)}格，最大 6.0 格），请先靠近。"
         }
 
         // 射线检测：看向方块后检查是否能看到
@@ -267,7 +267,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val originalPitch = fakePlayer.xRot
         fakePlayer.actionPack.lookAtBlock(fakePlayer, targetPos)
 
-        val hitResult = fakePlayer.pick(5.0, 1.0f, false)
+        val hitResult = fakePlayer.pick(6.0, 1.0f, false)
         val isSafe = if (hitResult.type == net.minecraft.world.phys.HitResult.Type.BLOCK) {
             val blockHit = hitResult as net.minecraft.world.phys.BlockHitResult
             blockHit.blockPos == targetPos
