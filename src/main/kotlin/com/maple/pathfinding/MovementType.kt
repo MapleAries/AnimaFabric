@@ -222,35 +222,23 @@ object MovementCostCalculator {
      * 检查位置是否可行走（脚下是固体，脚部和头部是非固体）。
      */
     fun canWalkAt(level: Level, pos: BlockPos): Boolean {
-        return canWalkOn(level, pos.below()) &&
-               canWalkThrough(level, pos) &&
-               canWalkThrough(level, pos.above())
+        return BlockClassifier.canWalkOn(level, pos.below()) &&
+               BlockClassifier.canWalkThrough(level, pos) &&
+               BlockClassifier.canWalkThrough(level, pos.above())
     }
 
     /**
-     * 检查方块是否可以踩踏（固体方块）。
+     * 检查方块是否可以踩踏。
      */
-    fun canWalkOn(level: Level, pos: BlockPos): Boolean {
-        val state = level.getBlockState(pos)
-        return state.isSolidRender
-    }
+    fun canWalkOn(level: Level, pos: BlockPos): Boolean = BlockClassifier.canWalkOn(level, pos)
 
     /**
-     * 检查方块是否可以通过（非固体方块，排除危险方块）。
+     * 检查方块是否可以通过。
      */
-    fun canWalkThrough(level: Level, pos: BlockPos): Boolean {
-        val state = level.getBlockState(pos)
-        if (state.isAir) return true
-        if (state.isSolidRender) return false
-        // 非固体但可通过的方块（水、草、花等）
-        return !isDangerous(state)
-    }
+    fun canWalkThrough(level: Level, pos: BlockPos): Boolean = BlockClassifier.canWalkThrough(level, pos)
 
     /**
      * 检查方块是否危险。
      */
-    fun isDangerous(state: BlockState): Boolean {
-        val name = state.block.name.string.lowercase()
-        return "lava" in name || "fire" in name || "cactus" in name || "magma" in name
-    }
+    fun isDangerous(state: BlockState): Boolean = BlockClassifier.isDangerous(state)
 }
