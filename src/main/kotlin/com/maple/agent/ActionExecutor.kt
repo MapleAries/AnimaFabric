@@ -146,21 +146,44 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
         val startPos = fakePlayer.position()
 
-        // 根据方向设置移动输入
-        val (fwd, strafe) = when (direction.lowercase()) {
-            "forward", "north", "n" -> 1.0f to 0.0f
-            "backward", "back", "south", "s" -> -1.0f to 0.0f
-            "left", "west", "w" -> 0.0f to -1.0f
-            "right", "east", "e" -> 0.0f to 1.0f
-            else -> return "无效方向：$direction（可用：forward/backward/left/right）"
+        // 绝对方向直接移动（不经过 yaw 转换）
+        val absDeltas = when (direction.lowercase()) {
+            "north", "n" -> Triple(0.0, 0.0, -1.0)
+            "south", "s" -> Triple(0.0, 0.0, 1.0)
+            "east", "e" -> Triple(1.0, 0.0, 0.0)
+            "west", "w" -> Triple(-1.0, 0.0, 0.0)
+            else -> null
         }
 
-        fakePlayer.actionPack.setMovement(fwd, strafe)
-
-        val waitTime = (distance * 250L).coerceAtMost(5000L)
-        kotlinx.coroutines.delay(waitTime)
-
-        fakePlayer.actionPack.stopMovement()
+        if (absDeltas != null) {
+            // 绝对方向：直接 move
+            val (dx, dy, dz) = absDeltas
+            val waitTime = (distance * 250L).coerceAtMost(5000L)
+            val steps = distance.coerceAtLeast(1)
+            val stepDx = dx / steps
+            val stepDz = dz / steps
+            val startTime = System.currentTimeMillis()
+            while (System.currentTimeMillis() - startTime < waitTime) {
+                fakePlayer.move(
+                    net.minecraft.world.entity.MoverType.SELF,
+                    net.minecraft.world.phys.Vec3(stepDx * 0.4, dy, stepDz * 0.4)
+                )
+                kotlinx.coroutines.delay(50)
+            }
+        } else {
+            // 相对方向：通过 ActionPack + yaw 转换
+            val (fwd, strafe) = when (direction.lowercase()) {
+                "forward", "fwd" -> 1.0f to 0.0f
+                "backward", "back" -> -1.0f to 0.0f
+                "left" -> 0.0f to -1.0f
+                "right" -> 0.0f to 1.0f
+                else -> return "无效方向：$direction（可用：forward/backward/left/right/north/south/east/west）"
+            }
+            fakePlayer.actionPack.setMovement(fwd, strafe)
+            val waitTime = (distance * 250L).coerceAtMost(5000L)
+            kotlinx.coroutines.delay(waitTime)
+            fakePlayer.actionPack.stopMovement()
+        }
 
         val endPos = fakePlayer.position()
         val movedDistance = startPos.distanceTo(endPos)
