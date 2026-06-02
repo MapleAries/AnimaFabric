@@ -48,6 +48,12 @@ class FakePlayer(
                 )
             )
         }
+        // 处理跳跃：直接设置向上速度
+        if (actionPack.wantsJump && onGround()) {
+            val motion = deltaMovement
+            setDeltaMovement(motion.x, 0.42, motion.z)
+            actionPack.wantsJump = false
+        }
         super.tick()
     }
 

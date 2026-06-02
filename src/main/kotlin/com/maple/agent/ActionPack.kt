@@ -51,6 +51,9 @@ class ActionPack {
     var sneaking = false
     var sprinting = false
 
+    // 跳跃标记
+    var wantsJump = false
+
     // 方块破坏状态机
     var currentBlock: BlockPos? = null
     var curBlockDamageMP = 0f
@@ -114,6 +117,7 @@ class ActionPack {
         actions.keys.toList().forEach { stop(it) }
         forward = 0f
         strafing = 0f
+        wantsJump = false
         sneaking = false
         sprinting = false
         currentBlock = null
@@ -264,9 +268,7 @@ class ActionPack {
     }
 
     private fun executeJump(player: ServerPlayer) {
-        if (player.onGround()) {
-            player.jumpFromGround()
-        }
+        wantsJump = true
     }
 
     private fun swapHands(player: ServerPlayer) {
