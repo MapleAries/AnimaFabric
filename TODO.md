@@ -6,9 +6,9 @@
 - [x] 超时 + 多系数 A*
 - [x] Entity.move() 直接驱动移动
 
-## P1 — 方块与工具
-- [ ] 增强方块分类系统（水/梯子/地毯/雪/门/半砖/台阶）
-- [ ] 工具感知挖掘代价（ToolSet + 附魔效果）
+## ~~P1 — 方块与工具~~ ✅
+- [x] 增强方块分类系统（BlockClassifier: 水/梯子/地毯/雪/门/半砖/台阶）
+- [x] 工具感知挖掘代价（ToolCostCalculator: 工具类型匹配 + 等级倍率）
 
 ## P2 — 架构改进
 - [ ] 回避系统（backtrack avoidance + mob avoidance）
