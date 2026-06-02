@@ -103,6 +103,9 @@ class LLMClient(private val config: AnimaFabricConfig) {
             val finalContent = processResponse(thinkingBuilder.toString(), contentBuilder.toString())
 
             LLMResponse(thinkingBuilder.toString(), finalContent)
+        } catch (e: java.net.SocketTimeoutException) {
+            logger.error("[AnimaFabric] LLM 请求超时（{}秒），请检查网络或增大 timeout 配置", config.timeout)
+            LLMResponse("", "")
         } catch (e: Exception) {
             logger.error("[AnimaFabric] LLM 请求异常: {}", e.message, e)
             LLMResponse("", "")

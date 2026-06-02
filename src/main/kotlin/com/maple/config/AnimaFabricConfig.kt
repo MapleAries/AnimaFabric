@@ -12,7 +12,7 @@ data class AnimaFabricConfig(
     val apiKey: String = "",
     val model: String = "deepseek-chat",
     val maxTokens: Int = 2048,
-    val timeout: Long = 120,
+    val timeout: Long = 300,
     val maxHistoryTurns: Int = 10,
     val maxRetries: Int = 3
 ) {
