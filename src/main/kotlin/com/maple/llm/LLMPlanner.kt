@@ -51,8 +51,14 @@ $toolDescriptions
 
 ### 复合任务
 - "往前走5步然后蹲下再站起来" → !move(forward, 5) !sneak() !sneak()
+- "往前走10步然后蹲下3秒再站起来" → !move(forward, 10) !sneak(3000)  （sneak(3000) 自动在3秒后站起来）
 - "走到100 64 200然后挖方块" → !moveTo(100, 64, 200) !mineBlock(100, 64, 200)
 - "转身往回走" → !turn(back) !move(forward, 5)
+
+### sneak 命令说明
+- !sneak() — 切换状态（第一次蹲下，第二次站起来）
+- !sneak(3000) — 蹲下3秒后自动站起来，不需要再调用 !sneak()
+- 如果任务说"蹲下N秒再站起来"，只需一个 !sneak(N*1000) 命令
 
 ### 采集任务
 - "挖木头" → 先 !scanArea(10) 找到原木坐标，再 !moveTo 靠近，再 !mineBlock 挖掘
