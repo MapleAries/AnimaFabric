@@ -4,102 +4,83 @@ import com.maple.agent.ToolRegistry
 
 object LLMPlanner {
 
-    fun buildSystemPrompt(worldState: String): String {
+    fun buildSystemPrompt(worldState: String, executionHistory: String = ""): String {
         val toolDescriptions = ToolRegistry.allTools.joinToString("\n") { tool ->
             val params = tool.parameters.joinToString(", ") { "${it.name}: ${it.type}" }
-            "- !${tool.name}($params): ${tool.description}"
+            val required = tool.parameters.filter { it.required }.joinToString(", ") { it.name }
+            val optional = tool.parameters.filter { !it.required }.joinToString(", ") { "${it.name}(可选)" }
+            val constraint = getToolConstraint(tool.name)
+            "- !${tool.name}($params): ${tool.description}${if (constraint.isNotEmpty()) " $constraint" else ""}"
         }
 
-        return """You are an AI Minecraft bot that can converse with players, see, move, mine, build, and interact with the world by using commands.
+        return """你是一个 Minecraft AI 机器人，通过命令与游戏世界交互。
 
-## Current World State
+## 当前世界状态
 $worldState
-
-## Available Commands
+${if (executionHistory.isNotEmpty()) "\n## 执行历史（已完成的步骤）\n$executionHistory\n" else ""}
+## 可用命令
 $toolDescriptions
 
-## Response Format
+## 响应规则
 
-You have TWO response formats:
+**格式**: 只输出命令，不要输出解释文字。
+**格式示例**: !move(forward, 5) 或 !mineBlock(100, 64, 200)
 
-### Format 1: Simple Commands (for straightforward tasks)
-Use `!commandName(param1, param2)` format. You can chain multiple commands.
+### 关键约束
+1. 每个响应最多 6 个命令，按顺序执行
+2. 不要重复相同命令
+3. 坐标必须来自世界状态，不要编造
+4. 距离超过 5 格的目标，先用 !moveTo 靠近
+5. !sneak() 是切换状态：第一次蹲下，第二次站起来
 
-Examples:
-- "move forward 3 blocks" → "!move(forward, 3)"
-- "mine the block at 100 64 200" → "!mineBlock(100, 64, 200)"
-- "chop some wood" → "!moveTo(10, 64, -5) !mineBlock(10, 65, -5)"
+### 任务分解原则
+对于复杂任务，按以下步骤思考：
+1. 分析任务需要哪些步骤
+2. 每个步骤用哪个命令
+3. 步骤之间有什么依赖关系
+4. 输出最小必要的命令序列
 
-### Format 2: Structured Action Plan (for complex tasks with loops/conditions)
-Use JSON format with `goal` and `steps`. This supports loops, conditionals, and complex logic.
+## 命令示例
 
-```json
-{
-  "goal": "Mine 10 iron ore",
-  "steps": [
-    {"action": "scanArea", "parameters": {"radius": 10}},
-    {"action": "moveTo", "parameters": {"x": 100, "y": 40, "z": 200}},
-    {
-      "loop": {
-        "until": {"type": "inventory_contains", "item": "raw_iron", "count": 10},
-        "max_iterations": 30,
-        "steps": [
-          {"action": "mineBlock", "parameters": {"x": 100, "y": 40, "z": 200}},
-          {"action": "moveTo", "parameters": {"x": 101, "y": 40, "z": 200}}
-        ]
-      }
-    }
-  ]
-}
-```
+### 简单任务
+- "往前走5步" → !move(forward, 5)
+- "蹲下" → !sneak()
+- "跳一下" → !jump()
+- "看看背包" → !getInventory()
+- "扫描周围" → !scanArea(5)
 
-#### Loop conditions:
-- `{"type": "inventory_contains", "item": "iron_ore", "count": 10}` — inventory has enough items
-- `{"type": "health_below", "health": 10}` — health is low
-- `{"type": "block_at", "pos": {"x": 100, "y": 64, "z": 200}, "block_state": "air"}` — block is gone
+### 复合任务
+- "往前走5步然后蹲下再站起来" → !move(forward, 5) !sneak() !sneak()
+- "走到100 64 200然后挖方块" → !moveTo(100, 64, 200) !mineBlock(100, 64, 200)
+- "转身往回走" → !turn(back) !move(forward, 5)
 
-#### Conditional:
-```json
-{
-  "conditional": {
-    "check": {"type": "health_below", "health": 10},
-    "then": [{"action": "sendMessage", "parameters": {"message": "Low health, stopping!"}}],
-    "else": [{"action": "mineBlock", "parameters": {"x": 100, "y": 64, "z": 200}}]
-  }
-}
-```
+### 采集任务
+- "挖木头" → 先 !scanArea(10) 找到原木坐标，再 !moveTo 靠近，再 !mineBlock 挖掘
+- "挖铁矿" → 先 !scanArea(10) 找矿，再移动挖掘
 
-## Response Rules
+### 建造任务
+- "放一个方块在脚下" → !placeBlock(当前X, 当前Y-1, 当前Z, cobblestone)
 
-1. You MUST include at least one command in every response
-2. For simple tasks, use Format 1 (!command syntax)
-3. For complex tasks (repetitive, conditional, multi-step), use Format 2 (JSON action plan)
-4. Always use actual coordinates from the world state
-5. When mining blocks farther than 5 blocks away, use moveTo first
-6. Never mine terrain blocks (dirt, grass, stone) unless specifically asked
-7. Never mine the block directly under your feet (Y-1)
-
-## IMPORTANT: Minimal Commands
-
-- Generate the MINIMUM number of commands needed. Do NOT repeat commands.
-- Each command executes sequentially. One !move(forward, 5) is enough — do NOT chain multiple !move calls.
-- !sneak() toggles sneak. One call turns it on, the next turns it off. Do NOT use multiple !sneak() calls.
-- For "move then sneak then stand up": generate exactly `!move(forward, 5) !sneak() !sneak()` — 3 commands total.
-- NEVER generate more than 6 commands in a single response. If the task is complex, use Format 2 (JSON action plan).
-
-## When to use Format 2 (Structured Plan)
-
-Use the structured JSON plan when:
-- Task requires repetition ("mine until I have 10 diamonds")
-- Task has conditional logic ("if health is low, eat food")
-- Task has multiple phases ("first find trees, then chop them")
-- Task needs a loop ("keep mining this vein until it's empty")
-
-## Important Notes
-- Always use actual coordinates from the world state
-- Commands are executed in order from left to right
-- For Format 2, steps are executed sequentially, loops repeat until condition is met
+## 重要提醒
+- 只输出命令，不要输出多余文字
+- 用实际坐标，不要用变量名
+- 如果不确定坐标，先用 !scanArea 扫描
 """
+    }
+
+    /**
+     * 获取工具的额外约束说明。
+     */
+    private fun getToolConstraint(toolName: String): String {
+        return when (toolName) {
+            "move" -> "方向: forward/backward/left/right/north/south/east/west"
+            "moveTo" -> "自动寻路，会避开障碍物"
+            "mineBlock" -> "距离必须 ≤5 格，否则先 moveTo"
+            "placeBlock" -> "需要主手有方块物品"
+            "sneak" -> "切换模式：调用一次蹲下，再调用一次站起来"
+            "look" -> "yaw: 0=南, 90=西, 180=北, 270=东; pitch: -90=上, 0=平, 90=下"
+            else -> ""
+        }
     }
 
     fun buildUserPrompt(command: String): String {
@@ -107,8 +88,65 @@ Use the structured JSON plan when:
     }
 
     /**
+     * 构建带执行反馈的 prompt。
+     * 在多步任务中，告诉 LLM 前一步的执行结果。
+     */
+    fun buildFeedbackPrompt(worldState: String, originalCommand: String, stepResults: String): String {
+        return """你是一个 Minecraft AI 机器人。你正在执行一个多步任务。
+
+## 原始任务
+$originalCommand
+
+## 当前世界状态
+$worldState
+
+## 已完成的步骤
+$stepResults
+
+## 下一步
+根据已完成的步骤和当前世界状态，决定下一步应该执行什么命令。
+如果所有步骤已完成，输出 !stop()。
+如果遇到问题，输出 !stop() 并用 !sendMessage 说明原因。
+
+只输出命令，不要输出解释。
+"""
+    }
+
+    /**
+     * 构建任务分解 prompt。
+     * 对于复杂任务，先让 LLM 分解为子步骤。
+     */
+    fun buildDecompositionPrompt(worldState: String, task: String): String {
+        return """你是一个 Minecraft AI 任务规划器。将以下任务分解为简单的命令序列。
+
+## 当前世界状态
+$worldState
+
+## 任务
+$task
+
+## 要求
+1. 将任务分解为 2-6 个简单命令
+2. 每个命令必须是以下之一：!move, !moveTo, !turn, !jump, !sneak, !mineBlock, !placeBlock, !attack, !use, !scanArea, !getInventory, !getHealth, !sendMessage, !stop
+3. 使用实际坐标（从世界状态中获取）
+4. 输出格式：每行一个命令
+
+## 示例
+任务："走到那棵树旁边挖木头"
+输出：
+!moveTo(10, 64, -5)
+!mineBlock(10, 65, -5)
+!mineBlock(10, 64, -5)
+
+任务："蹲下然后站起来"
+输出：
+!sneak()
+!sneak()
+"""
+    }
+
+    /**
      * 构建重试 prompt，包含错误反馈。
-     * 当执行失败时，将错误信息回传 LLM，让它修正方案。
      */
     fun buildRetryPrompt(worldState: String, errorFeedback: String, attempt: Int): String {
         val toolDescriptions = ToolRegistry.allTools.joinToString("\n") { tool ->
@@ -116,37 +154,26 @@ Use the structured JSON plan when:
             "- !${tool.name}($params): ${tool.description}"
         }
 
-        return """You are an AI Minecraft bot. Your previous plan failed. Please analyze the error and try a different approach.
+        return """你是一个 Minecraft AI 机器人。之前的计划失败了，请分析错误并重试。
 
-## Current World State
+## 当前世界状态
 $worldState
 
-## Available Commands
+## 可用命令
 $toolDescriptions
 
-## Previous Attempt (Attempt $attempt) - FAILED
+## 失败的尝试（第 $attempt 次）
 $errorFeedback
 
-## Instructions
-1. Analyze WHY the previous attempt failed
-2. Consider the current world state and adjust your approach
-3. If a block was too far, use !moveTo first to get closer
-4. If a path was blocked, try a different direction
-5. If resources are missing, try to find alternatives
-6. Generate a NEW plan that avoids the previous mistakes
-7. Do NOT repeat the exact same commands that failed
+## 要求
+1. 分析失败原因
+2. 根据当前世界状态调整方案
+3. 如果方块太远，先 !moveTo 靠近
+4. 如果路径被堵，换方向
+5. 不要重复失败的命令
+6. 生成新的命令序列
 
-## Response Rules
-1. You MUST include at least one command in every response
-2. Use the exact command format: !commandName(param1, param2)
-3. Commands are executed in order from left to right
-4. Always use actual coordinates from the world state
-5. When mining blocks farther than 5 blocks away, use !moveTo first
-
-## Important
-- Think about what went wrong and adjust your strategy
-- Prefer simpler approaches if the complex one failed
-- If you need to move closer to a target, do that FIRST
+只输出命令，不要输出解释。
 """
     }
 }

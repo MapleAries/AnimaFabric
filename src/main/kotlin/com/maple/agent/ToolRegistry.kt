@@ -19,7 +19,7 @@ object ToolRegistry {
     val allTools = listOf(
         Tool(
             name = "moveTo",
-            description = "使用 A* 寻路移动到指定坐标。会自动避开障碍物。",
+            description = "自动寻路移动到指定坐标。会自动避开障碍物。",
             parameters = listOf(
                 ToolParameter("x", "number", "目标 X 坐标"),
                 ToolParameter("y", "number", "目标 Y 坐标"),
@@ -32,7 +32,7 @@ object ToolRegistry {
             name = "move",
             description = "短距离移动。按指定方向移动指定格数。",
             parameters = listOf(
-                ToolParameter("direction", "string", "方向：forward/north/backward/south/left/west/right/east"),
+                ToolParameter("direction", "string", "方向：forward/backward/left/right/north/south/east/west"),
                 ToolParameter("ticks", "number", "移动距离（格数），默认 5", required = false)
             )
         ),
@@ -53,22 +53,22 @@ object ToolRegistry {
         ),
         Tool(
             name = "jump",
-            description = "跳跃。",
+            description = "跳跃一次。",
             parameters = emptyList()
         ),
         Tool(
             name = "attack",
-            description = "攻击视线方向的实体（射线检测）。",
+            description = "攻击视线方向的实体。",
             parameters = emptyList()
         ),
         Tool(
             name = "use",
-            description = "使用主手物品（射线检测目标）。",
+            description = "使用主手物品。",
             parameters = emptyList()
         ),
         Tool(
             name = "mineBlock",
-            description = "挖掘指定坐标的方块。会自动走向并破坏方块。",
+            description = "挖掘指定坐标的方块。距离必须≤5格，否则先用moveTo靠近。",
             parameters = listOf(
                 ToolParameter("x", "number", "方块 X 坐标"),
                 ToolParameter("y", "number", "方块 Y 坐标"),
@@ -78,7 +78,7 @@ object ToolRegistry {
         ),
         Tool(
             name = "placeBlock",
-            description = "在指定坐标放置方块。",
+            description = "在指定坐标放置方块。需要主手有方块物品。",
             parameters = listOf(
                 ToolParameter("x", "number", "放置位置 X"),
                 ToolParameter("y", "number", "放置位置 Y"),
@@ -127,9 +127,9 @@ object ToolRegistry {
         ),
         Tool(
             name = "sneak",
-            description = "蹲下/潜行。不带参数为切换潜行状态，带 duration 参数为持续指定毫秒。",
+            description = "切换潜行状态。调用一次蹲下，再调用一次站起来。",
             parameters = listOf(
-                ToolParameter("duration", "number", "持续时间（毫秒），不填则持续蹲下", required = false)
+                ToolParameter("duration", "number", "持续时间（毫秒），不填则持续", required = false)
             )
         )
     )

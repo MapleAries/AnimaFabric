@@ -36,6 +36,7 @@ class PipelineExecutor(
      */
     suspend fun processCommand(command: String): String {
         var lastError: String? = null
+        var executionHistory = ""
         val maxRetries = getMaxRetries()
 
         for (attempt in 0..maxRetries) {
@@ -47,9 +48,9 @@ class PipelineExecutor(
                 "Bot not online"
             }
 
-            // 2. 构建 LLM 请求（如果是重试，附加错误反馈）
+            // 2. 构建 LLM 请求（带执行历史和错误反馈）
             val systemPrompt = if (attempt == 0) {
-                LLMPlanner.buildSystemPrompt(worldState)
+                LLMPlanner.buildSystemPrompt(worldState, executionHistory)
             } else {
                 LLMPlanner.buildRetryPrompt(worldState, lastError!!, attempt)
             }
@@ -112,6 +113,12 @@ class PipelineExecutor(
 
                     val result = executeCommands(parsed.commands)
                     val hasFailure = result.any { it.failed }
+
+                    // 构建执行历史（用于后续 LLM 调用）
+                    executionHistory = result.mapIndexed { i, r ->
+                        val status = if (r.failed) "失败" else "成功"
+                        "${i+1}. [${r.toolName}] $status: ${r.message}"
+                    }.joinToString("\n")
 
                     if (!hasFailure) {
                         val resultText = result.joinToString("\n") { it.message }
