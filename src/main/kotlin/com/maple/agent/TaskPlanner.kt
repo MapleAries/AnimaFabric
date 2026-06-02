@@ -113,29 +113,41 @@ class TaskPlanner(
         val bot = server.playerList.getPlayerByName(botName)
         val worldState = if (bot != null) WorldPerception.scan(bot) else "Bot not online"
 
-        val prompt = """你是一个 Minecraft AI 任务规划器。将以下任务分解为简单的命令步骤。
+        val prompt = """你是一个 Minecraft AI 任务规划器。将任务分解为命令步骤。
 
 ## 当前世界状态
 $worldState
 
-## 任务
-$command
+## 可用命令
+!moveTo(x, y, z) — 移动到坐标
+!move(direction, 格数) — 短距离移动（forward/backward/left/right）
+!turn(direction) — 转向（left/right/back）
+!jump() — 跳跃
+!sneak() — 切换潜行
+!mineBlock(x, y, z) — 挖掘方块
+!placeBlock(x, y, z, block) — 放置方块
+!scanArea(radius) — 扫描周围
+!getInventory() — 查看背包
+!attack() — 攻击
+!use() — 使用物品
+!sendMessage(msg) — 发送消息
 
-## 要求
-1. 每个步骤是一个简单的命令（!move, !moveTo, !turn, !jump, !sneak, !mineBlock, !placeBlock, !attack, !use, !scanArea, !getInventory, !getHealth, !sendMessage, !stop）
-2. 使用实际坐标（从世界状态中获取）
-3. 最多 8 个步骤
-4. 每行格式：步骤描述 | !命令
+## 输出格式
+每行一个命令，直接输出 !命令，不要输出其他内容。
 
 ## 示例
-任务："走到那棵树旁边挖木头"
-走到树旁边 | !moveTo(10, 64, -5)
-挖原木 | !mineBlock(10, 65, -5)
-继续挖 | !mineBlock(10, 64, -5)
+输入："走到树旁边挖木头"
+!moveTo(10, 64, -5)
+!mineBlock(10, 65, -5)
+!mineBlock(10, 64, -5)
 
-任务："蹲下然后站起来"
-蹲下 | !sneak()
-站起来 | !sneak()
+输入："蹲下然后站起来"
+!sneak()
+!sneak()
+
+输入："往前走5步跳一下"
+!move(forward, 5)
+!jump()
 """
 
         val messages = listOf(
@@ -187,24 +199,74 @@ $completed
 
     /**
      * 解析步骤列表。
-     * 格式：步骤描述 | !命令
+     * 支持多种格式：
+     * 1. 描述 | !命令
+     * 2. !命令（无描述）
+     * 3. 编号. 描述 !命令
      */
     private fun parseSteps(content: String): List<TaskStep> {
         val steps = mutableListOf<TaskStep>()
-        val lines = content.lines().filter { it.isNotBlank() && "|" in it }
 
+        // 先尝试从思考内容中提取命令
+        val commandPattern = Regex("""!(\w+)\([^)]*\)""")
+        val commands = commandPattern.findAll(content).map { it.value }.toList()
+
+        if (commands.isNotEmpty()) {
+            // 找到命令了，为每个命令生成描述
+            for (cmd in commands) {
+                val toolName = Regex("""!(\w+)""").find(cmd)?.groupValues?.get(1) ?: "执行"
+                val description = getToolDescription(toolName)
+                steps.add(TaskStep(description, cmd))
+            }
+            return steps
+        }
+
+        // 尝试 "描述 | !命令" 格式
+        val lines = content.lines().filter { it.isNotBlank() }
         for (line in lines) {
-            val parts = line.split("|", limit = 2)
-            if (parts.size == 2) {
-                val description = parts[0].trim()
-                val command = parts[1].trim()
-                if (command.startsWith("!")) {
-                    steps.add(TaskStep(description, command))
+            if ("|" in line) {
+                val parts = line.split("|", limit = 2)
+                if (parts.size == 2) {
+                    val description = parts[0].trim()
+                    val command = parts[1].trim()
+                    if (command.startsWith("!")) {
+                        steps.add(TaskStep(description, command))
+                    }
                 }
+            } else if (line.trimStart().startsWith("!")) {
+                // 纯命令格式
+                val cmd = line.trim()
+                val toolName = Regex("""!(\w+)""").find(cmd)?.groupValues?.get(1) ?: "执行"
+                steps.add(TaskStep(getToolDescription(toolName), cmd))
             }
         }
 
         return steps
+    }
+
+    /**
+     * 获取工具的中文描述。
+     */
+    private fun getToolDescription(toolName: String): String {
+        return when (toolName) {
+            "moveTo" -> "移动到目标位置"
+            "move" -> "移动"
+            "look" -> "调整视角"
+            "turn" -> "转向"
+            "jump" -> "跳跃"
+            "attack" -> "攻击"
+            "use" -> "使用物品"
+            "mineBlock" -> "挖掘方块"
+            "placeBlock" -> "放置方块"
+            "getInventory" -> "查看背包"
+            "getHealth" -> "查看血量"
+            "getHunger" -> "查看饥饿值"
+            "scanArea" -> "扫描周围"
+            "sendMessage" -> "发送消息"
+            "stop" -> "停止"
+            "sneak" -> "潜行"
+            else -> "执行 $toolName"
+        }
     }
 
     /**
