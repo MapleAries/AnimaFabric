@@ -68,12 +68,11 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
                         executor.execute(commandType.action, commandType.groups)
                     }
                     is CommandRouter.CommandType.Complex -> {
-                        println("[AnimaFabric] 复杂指令，交给 LLM 规划")
-                        val memory = memories[botName]!!
+                        println("[AnimaFabric] 复杂指令，交给 TaskPlanner 处理")
                         val actionExecutor = ActionExecutor(botName, server)
-                        val pipelineExecutor = PipelineExecutor(botName, server, llmClient, memory, actionExecutor)
+                        val taskPlanner = TaskPlanner(botName, server, llmClient, actionExecutor)
                         withTimeout(config.timeout * 2000) {
-                            pipelineExecutor.processCommand(commandType.command)
+                            taskPlanner.processTask(commandType.command)
                         }
                     }
                 }
