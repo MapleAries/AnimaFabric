@@ -29,8 +29,8 @@ class FakePlayer(
     }
 
     override fun tick() {
-        super.tick()
         actionPack.onUpdate(this)
+        super.tick()
     }
 
     override fun die(damageSource: DamageSource) {
