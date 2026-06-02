@@ -30,8 +30,23 @@ class FakePlayer(
 
     override fun tick() {
         actionPack.onUpdate(this)
+        // 直接驱动移动，不依赖 MC 的 Input 系统
         if (actionPack.forward != 0f || actionPack.strafing != 0f) {
-            println("[AnimaFabric] FakePlayer tick: zza=$zza, xxa=$xxa, forward=${actionPack.forward}, onGround=${onGround()}")
+            val vel = if (actionPack.sneaking) 0.03f else 0.1f
+            val fwd = actionPack.forward * vel
+            val strafe = actionPack.strafing * vel
+            // 根据朝向计算世界坐标移动
+            val yawRad = Math.toRadians(yRot.toDouble())
+            val sin = Math.sin(yawRad).toFloat()
+            val cos = Math.cos(yawRad).toFloat()
+            move(
+                net.minecraft.world.entity.MoverType.SELF,
+                net.minecraft.world.phys.Vec3(
+                    (strafe * cos - fwd * sin).toDouble(),
+                    0.0,
+                    (strafe * sin + fwd * cos).toDouble()
+                )
+            )
         }
         super.tick()
     }
