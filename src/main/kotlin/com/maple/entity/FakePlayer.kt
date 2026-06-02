@@ -31,14 +31,15 @@ class FakePlayer(
     override fun tick() {
         actionPack.onUpdate(this)
 
-        // 跳跃：设置向上速度
-        if (actionPack.wantsJump && onGround()) {
-            val motion = deltaMovement
-            setDeltaMovement(motion.x, 0.42, motion.z)
-            actionPack.wantsJump = false
+        // 调试：显示状态
+        val isOnGround = onGround()
+        if (actionPack.wantsJump || actionPack.sneaking || actionPack.forward != 0f) {
+            println("[AnimaFabric] tick: onGround=$isOnGround, wantsJump=${actionPack.wantsJump}, sneak=${actionPack.sneaking}, fwd=${actionPack.forward}, y=$y")
         }
 
-        // 水平移动
+        // 计算水平移动
+        var moveX = 0.0
+        var moveZ = 0.0
         if (actionPack.forward != 0f || actionPack.strafing != 0f) {
             val vel = if (actionPack.sneaking) 0.03f else 0.1f
             val fwd = actionPack.forward * vel
@@ -46,26 +47,28 @@ class FakePlayer(
             val yawRad = Math.toRadians(yRot.toDouble())
             val sin = Math.sin(yawRad).toFloat()
             val cos = Math.cos(yawRad).toFloat()
-            move(
-                net.minecraft.world.entity.MoverType.SELF,
-                net.minecraft.world.phys.Vec3(
-                    (strafe * cos - fwd * sin).toDouble(),
-                    0.0,
-                    (strafe * sin + fwd * cos).toDouble()
-                )
-            )
+            moveX = (strafe * cos - fwd * sin).toDouble()
+            moveZ = (strafe * sin + fwd * cos).toDouble()
         }
 
-        // 手动重力（不调用 super.tick()，避免冲突）
-        if (!onGround()) {
+        // 计算垂直移动
+        var moveY = 0.0
+        if (actionPack.wantsJump && isOnGround) {
+            moveY = 0.42
+            actionPack.wantsJump = false
+            println("[AnimaFabric] JUMPING! moveY=$moveY")
+        }
+
+        // 重力
+        if (!isOnGround) {
             val motion = deltaMovement
-            setDeltaMovement(motion.x, (motion.y - 0.08) * 0.98, motion.z)
-            // 应用下落
-            move(net.minecraft.world.entity.MoverType.SELF, deltaMovement)
+            moveY = (motion.y - 0.08) * 0.98
         }
 
-        // 处理 ActionPack 中的其他动作（攻击、使用等）
-        // 注意：onUpdate 已经在顶部调用，这里不需要重复
+        // 应用移动（一次 move 调用）
+        if (moveX != 0.0 || moveY != 0.0 || moveZ != 0.0) {
+            move(net.minecraft.world.entity.MoverType.SELF, net.minecraft.world.phys.Vec3(moveX, moveY, moveZ))
+        }
     }
 
     override fun die(damageSource: DamageSource) {
