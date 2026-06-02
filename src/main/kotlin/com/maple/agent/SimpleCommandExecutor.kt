@@ -37,6 +37,7 @@ class SimpleCommandExecutor(
             "get_hunger" -> executeGetHunger()
             "scan_area" -> executeScanArea()
             "stop" -> executeStop()
+            "sneak" -> executeSneak()
             "mine_front" -> executeMineFront()
             "execute_command" -> executeDirectCommand(groups)
             else -> "未知指令: $action"
@@ -193,6 +194,12 @@ class SimpleCommandExecutor(
         val fakePlayer = getFakePlayer()
         fakePlayer?.actionPack?.stopAll()
         return "已停止所有动作"
+    }
+
+    private fun executeSneak(): String {
+        val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
+        fakePlayer.actionPack.sneaking = !fakePlayer.actionPack.sneaking
+        return if (fakePlayer.actionPack.sneaking) "已蹲下" else "已站起"
     }
 
     /**

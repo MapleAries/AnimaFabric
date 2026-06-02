@@ -34,6 +34,9 @@ object CommandRouter {
 
         // 停止类
         Regex("^(停|停止|停下|stop)$") to "stop",
+
+        // 潜行类
+        Regex("^(蹲|蹲下|潜行|sneak|crouch)$") to "sneak",
     )
 
     /**

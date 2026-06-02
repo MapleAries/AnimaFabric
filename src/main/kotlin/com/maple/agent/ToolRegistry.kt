@@ -124,6 +124,13 @@ object ToolRegistry {
             name = "stop",
             description = "停止当前所有动作。",
             parameters = emptyList()
+        ),
+        Tool(
+            name = "sneak",
+            description = "蹲下/潜行。不带参数为切换潜行状态，带 duration 参数为持续指定毫秒。",
+            parameters = listOf(
+                ToolParameter("duration", "number", "持续时间（毫秒），不填则持续蹲下", required = false)
+            )
         )
     )
 

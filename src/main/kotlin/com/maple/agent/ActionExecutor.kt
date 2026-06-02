@@ -69,6 +69,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             "scanArea" -> executeScanArea(params)
             "sendMessage" -> executeSendMessage(params)
             "stop" -> executeStop()
+            "sneak" -> executeSneak(params)
             else -> "未知工具：$toolName"
         }
     }
@@ -386,5 +387,20 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             fakePlayer.actionPack.stopAll()
         }
         return "已停止所有动作"
+    }
+
+    private suspend fun executeSneak(params: Map<String, Any>): String {
+        val duration = getIntParam(params, "duration")
+        val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
+
+        fakePlayer.actionPack.sneaking = true
+
+        if (duration != null && duration > 0) {
+            kotlinx.coroutines.delay(duration.toLong())
+            fakePlayer.actionPack.sneaking = false
+            return "已蹲下 ${duration}ms"
+        }
+
+        return "已蹲下"
     }
 }
