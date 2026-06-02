@@ -270,16 +270,25 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val hitResult = fakePlayer.pick(6.0, 1.0f, false)
         val isSafe = if (hitResult.type == net.minecraft.world.phys.HitResult.Type.BLOCK) {
             val blockHit = hitResult as net.minecraft.world.phys.BlockHitResult
-            blockHit.blockPos == targetPos
+            if (blockHit.blockPos == targetPos) {
+                true
+            } else {
+                // 检查阻挡方块是否是透明/可破坏的（如树叶）
+                val blockingState = fakePlayer.level().getBlockState(blockHit.blockPos)
+                val blockingName = blockingState.block.name.string.lowercase()
+                val isTransparent = "leaves" in blockingName || "glass" in blockingName ||
+                    "air" in blockingName || "water" in blockingName ||
+                    !blockingState.isSolidRender
+                isTransparent
+            }
         } else {
             false
         }
 
         if (!isSafe) {
-            // 还原视角
             fakePlayer.yRot = originalYaw
             fakePlayer.xRot = originalPitch
-            return "挖掘失败：方块 ($x, $y, $z) 视线被阻挡，请先移动到附近。"
+            return "挖掘失败：方块 ($x, $y, $z) 视线被固体方块阻挡，请先移动到附近。"
         }
 
         // 2. 开始挖掘（通过 ActionPack 的持续攻击，它内置了方块破坏状态机）
