@@ -31,6 +31,14 @@ class FakePlayer(
     override fun tick() {
         actionPack.onUpdate(this)
 
+        // 同步潜行状态到实体（视觉蹲下 + 边缘防掉落）
+        this.isShiftKeyDown = actionPack.sneaking
+        if (actionPack.sneaking) {
+            setPose(net.minecraft.world.entity.Pose.CROUCHING)
+        } else {
+            setPose(net.minecraft.world.entity.Pose.STANDING)
+        }
+
         // 调试：显示状态
         val isOnGround = onGround()
         if (actionPack.wantsJump || actionPack.sneaking || actionPack.forward != 0f) {
