@@ -30,6 +30,9 @@ class FakePlayer(
 
     override fun tick() {
         actionPack.onUpdate(this)
+        if (actionPack.forward != 0f || actionPack.strafing != 0f) {
+            println("[AnimaFabric] FakePlayer tick: zza=$zza, xxa=$xxa, forward=${actionPack.forward}, onGround=${onGround()}")
+        }
         super.tick()
     }
 

@@ -8,7 +8,7 @@ import java.nio.file.Path
 
 @Serializable
 data class AnimaFabricConfig(
-    val apiUrl: String = "https://api.deepseek.com/v1/chat/completions",
+    val apiUrl: String = "https://api.deepseek.com/chat/completions",
     val apiKey: String = "",
     val model: String = "deepseek-chat",
     val maxTokens: Int = 2048,
