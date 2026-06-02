@@ -70,8 +70,8 @@ class PipelineExecutor(
                 println("[AnimaFabric] LLM thinking (attempt ${attempt + 1}): ${llmResponse.thinking.take(200)}...")
             }
 
-            // 5. 检查输出
-            if (llmResponse.content.isBlank()) {
+            // 5. 检查输出（content 和 thinking 都为空才算失败）
+            if (llmResponse.content.isBlank() && llmResponse.thinking.isBlank()) {
                 lastError = "LLM returned no content"
                 println("[AnimaFabric] Retry ${attempt + 1}/$maxRetries: $lastError")
                 continue
