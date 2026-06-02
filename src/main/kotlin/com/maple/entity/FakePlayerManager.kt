@@ -19,14 +19,14 @@ object FakePlayerManager {
      * @param x, y, z 生成坐标
      * @return 创建的 FakePlayer 实例
      */
-    fun spawn(server: MinecraftServer, name: String, x: Double, y: Double, z: Double): FakePlayer {
+    fun spawn(server: MinecraftServer, name: String, x: Double, y: Double, z: Double, yaw: Float = 0f, pitch: Float = 0f): FakePlayer {
         // 如果已存在同名假人，先移除
         if (bots.containsKey(name)) {
             kill(server, name)
         }
 
         val level = server.overworld()
-        val fakePlayer = FakePlayer.create(level, name, x, y, z)
+        val fakePlayer = FakePlayer.create(level, name, x, y, z, yaw, pitch)
         bots[name] = fakePlayer
         return fakePlayer
     }

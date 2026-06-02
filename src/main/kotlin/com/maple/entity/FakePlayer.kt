@@ -68,12 +68,14 @@ class FakePlayer(
         /**
          * 创建假玩家。
          */
-        fun create(level: ServerLevel, name: String, x: Double, y: Double, z: Double): FakePlayer {
+        fun create(level: ServerLevel, name: String, x: Double, y: Double, z: Double, yaw: Float = 0f, pitch: Float = 0f): FakePlayer {
             val uuid = UUID.nameUUIDFromBytes("AnimaFabric:$name".toByteArray())
             val profile = GameProfile(uuid, "[AI] $name")
             val fakePlayer = FakePlayer(level, profile)
 
             fakePlayer.setPos(x, y, z)
+            fakePlayer.yRot = yaw
+            fakePlayer.xRot = pitch
 
             val server = level.server
             val cookie = CommonListenerCookie.createInitial(profile, false)
