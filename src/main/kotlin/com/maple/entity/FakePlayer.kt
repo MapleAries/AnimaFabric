@@ -30,12 +30,19 @@ class FakePlayer(
 
     override fun tick() {
         actionPack.onUpdate(this)
-        // 直接驱动移动，不依赖 MC 的 Input 系统
+
+        // 跳跃：设置向上速度
+        if (actionPack.wantsJump && onGround()) {
+            val motion = deltaMovement
+            setDeltaMovement(motion.x, 0.42, motion.z)
+            actionPack.wantsJump = false
+        }
+
+        // 水平移动
         if (actionPack.forward != 0f || actionPack.strafing != 0f) {
             val vel = if (actionPack.sneaking) 0.03f else 0.1f
             val fwd = actionPack.forward * vel
             val strafe = actionPack.strafing * vel
-            // 根据朝向计算世界坐标移动
             val yawRad = Math.toRadians(yRot.toDouble())
             val sin = Math.sin(yawRad).toFloat()
             val cos = Math.cos(yawRad).toFloat()
@@ -48,13 +55,17 @@ class FakePlayer(
                 )
             )
         }
-        // 处理跳跃：直接设置向上速度
-        if (actionPack.wantsJump && onGround()) {
+
+        // 手动重力（不调用 super.tick()，避免冲突）
+        if (!onGround()) {
             val motion = deltaMovement
-            setDeltaMovement(motion.x, 0.42, motion.z)
-            actionPack.wantsJump = false
+            setDeltaMovement(motion.x, (motion.y - 0.08) * 0.98, motion.z)
+            // 应用下落
+            move(net.minecraft.world.entity.MoverType.SELF, deltaMovement)
         }
-        super.tick()
+
+        // 处理 ActionPack 中的其他动作（攻击、使用等）
+        // 注意：onUpdate 已经在顶部调用，这里不需要重复
     }
 
     override fun die(damageSource: DamageSource) {
