@@ -9,11 +9,11 @@ object CommandRouter {
 
     // 简单指令的正则模式
     private val simplePatterns = listOf(
-        // 移动类
-        Regex("^(往前|往前走|向前|前进|forward)(\\d+)?格?$") to "move_forward",
-        Regex("^(往后|往后走|向后|后退|backward)(\\d+)?格?$") to "move_backward",
-        Regex("^(往左|往左走|向左|left)(\\d+)?格?$") to "move_left",
-        Regex("^(往右|往右走|向右|right)(\\d+)?格?$") to "move_right",
+        // 移动类（允许方向词和数字之间有空格）
+        Regex("^(往前|往前走|向前|前进|forward)\\s*(\\d+)?格?$") to "move_forward",
+        Regex("^(往后|往后走|向后|后退|backward|back)\\s*(\\d+)?格?$") to "move_backward",
+        Regex("^(往左|往左走|向左|left)\\s*(\\d+)?格?$") to "move_left",
+        Regex("^(往右|往右走|向右|right)\\s*(\\d+)?格?$") to "move_right",
         Regex("^(移动|走到|去)(\\d+)[,，\\s]*(\\d+)[,，\\s]*(\\d+)$") to "move_to",
 
         // 转向类
