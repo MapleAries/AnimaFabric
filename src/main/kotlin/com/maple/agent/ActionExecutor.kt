@@ -149,10 +149,10 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         // 根据方向设置移动输入
         val (fwd, strafe) = when (direction.lowercase()) {
             "forward", "north", "n" -> 1.0f to 0.0f
-            "backward", "south", "s" -> -1.0f to 0.0f
+            "backward", "back", "south", "s" -> -1.0f to 0.0f
             "left", "west", "w" -> 0.0f to -1.0f
             "right", "east", "e" -> 0.0f to 1.0f
-            else -> return "无效方向：$direction"
+            else -> return "无效方向：$direction（可用：forward/backward/left/right）"
         }
 
         fakePlayer.actionPack.setMovement(fwd, strafe)

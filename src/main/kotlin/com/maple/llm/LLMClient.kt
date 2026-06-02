@@ -168,12 +168,23 @@ class LLMClient(private val config: AnimaFabricConfig) {
      */
     private fun extractJsonFromThinking(thinking: String): String {
         // 方式1：找命令格式 !toolName(param1, param2)
-        // 过滤掉工具描述（包含 "param: type" 格式），只保留实际调用
-        val commandPattern = Regex("""!(\w+)\([^)]*\)""")
+        // 过滤掉工具描述，只保留实际调用
+        val commandPattern = Regex("""!(\w+)\(([^)]*)\)""")
         val typePattern = Regex("""\w+:\s*(string|number|boolean|int|float|double)""")
         val commandMatches = commandPattern.findAll(thinking)
+            .filter { match ->
+                val args = match.groupValues[2].trim()
+                // 过滤条件1：包含类型注解 (direction: string)
+                val hasTypeAnnotation = typePattern.containsMatchIn(args)
+                // 过滤条件2：所有参数都是纯字母单词（参数名，不是值）
+                val allParamNames = args.split(",").all { part ->
+                    val trimmed = part.trim()
+                    trimmed.isNotEmpty() && trimmed.matches(Regex("[a-zA-Z_]+"))
+                }
+                // 保留：既没有类型注解，也不是纯参数名
+                !hasTypeAnnotation && !allParamNames
+            }
             .map { it.value }
-            .filter { cmd -> !typePattern.containsMatchIn(cmd) }
             .toList()
         if (commandMatches.isNotEmpty()) {
             val result = commandMatches.joinToString(" ")
