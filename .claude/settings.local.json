@@ -3,7 +3,9 @@
     "allow": [
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(mkdir -p C:/Users/lingf/Documents/AnimaFabric/libs)",
+      "Bash(curl -L -o C:/Users/lingf/Documents/AnimaFabric/libs/fabric-carpet-26.1+v260402.jar \"https://github.com/gnembon/fabric-carpet/releases/download/v26.1/fabric-carpet-26.1+v260402.jar\")"
     ]
   }
 }

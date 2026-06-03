@@ -8,8 +8,8 @@ import net.minecraft.server.MinecraftServer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 主控制器：接收指令 → 判断类型 → 分发到简单执行器或 LLM 规划器。
- * 直接管理 FakePlayer 实例，不依赖外部 mod。
+ * 主控制器：接收指令 → 判断类型 → 分发到 TaskPlanner 处理。
+ * 通过 Carpet 命令控制假人。
  */
 class AgentController(private val config: AnimaFabricConfig, private val server: MinecraftServer) {
 
@@ -17,7 +17,6 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
     private val memories = ConcurrentHashMap<String, ConversationMemory>()
     private val scopes = ConcurrentHashMap<String, CoroutineScope>()
     private val jobs = ConcurrentHashMap<String, Job>()
-    private val behaviorModes = ConcurrentHashMap<String, BehaviorModes>()
 
     /**
      * 获取所有可用的假人名称。
@@ -28,34 +27,26 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
 
     /**
      * 向指定假人发送指令。
-     * 先判断是否为简单指令，如果是则直接执行，否则交给 LLM 规划。
      */
     fun sendCommand(name: String, command: String, onComplete: (String) -> Unit) {
         val bot = FakePlayerManager.getBot(server, name)
         if (bot == null) {
-            onComplete("假人 '$name' 不存在。请使用 /ai spawn <名称> 生成假人。")
+            onComplete("假人 '$name' 不存在。请先使用 /player <name> spawn 生成假人。")
             return
         }
 
         val botName = bot.name.string
 
-        // 确保有协程作用域和行为模式
         if (!scopes.containsKey(botName)) {
             scopes[botName] = CoroutineScope(Dispatchers.Default + SupervisorJob())
         }
         if (!memories.containsKey(botName)) {
             memories[botName] = ConversationMemory(config.maxHistoryTurns, llmClient)
         }
-        if (!behaviorModes.containsKey(botName)) {
-            behaviorModes[botName] = BehaviorModes(botName, server)
-        }
 
         val scope = scopes[botName]!!
-
-        // 取消之前的任务
         jobs[botName]?.cancel()
 
-        // 启动新任务（所有指令都走 LLM）
         jobs[botName] = scope.launch {
             try {
                 println("[AnimaFabric] 指令交给 TaskPlanner 处理: $command")
@@ -85,9 +76,12 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
         jobs[botName]?.cancel()
         jobs.remove(botName)
 
-        // 直接通过 ActionPack 停止
-        val fakePlayer = FakePlayerManager.getFakePlayer(name)
-        fakePlayer?.actionPack?.stopAll()
+        try {
+            server.commands.performPrefixedCommand(
+                server.createCommandSourceStack(),
+                "/player $botName stop"
+            )
+        } catch (_: Exception) {}
     }
 
     /**
@@ -102,12 +96,12 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
      */
     fun kill(name: String) {
         stop(name)
-        val botName = FakePlayerManager.getBot(server, name)?.name?.string ?: name
+        val bot = FakePlayerManager.getBot(server, name) ?: return
+        val botName = bot.name.string
 
         scopes[botName]?.cancel()
         scopes.remove(botName)
         memories.remove(botName)
-        behaviorModes.remove(botName)
         FakePlayerManager.kill(server, name)
     }
 
@@ -119,7 +113,6 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
         FakePlayerManager.killAll(server)
         scopes.clear()
         memories.clear()
-        behaviorModes.clear()
     }
 
     /**
@@ -136,13 +129,5 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
     fun clearMemory(name: String) {
         val bot = FakePlayerManager.getBot(server, name) ?: return
         memories[bot.name.string]?.clear()
-    }
-
-    /**
-     * 获取假人的行为模式。
-     */
-    fun getBehaviorModes(name: String): BehaviorModes? {
-        val bot = FakePlayerManager.getBot(server, name) ?: return null
-        return behaviorModes[bot.name.string]
     }
 }

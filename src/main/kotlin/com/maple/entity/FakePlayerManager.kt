@@ -2,48 +2,42 @@ package com.maple.entity
 
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerPlayer
-import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 管理 AI 假人的生命周期。
- * 直接使用 FakePlayer 实体，不依赖外部 mod。
+ * 管理 Carpet 假人的检测和控制。
+ * 不自己生成假人，由用户通过 /player <name> spawn 生成。
  */
 object FakePlayerManager {
 
-    // 内部维护所有 AI 假人
-    private val bots = ConcurrentHashMap<String, FakePlayer>()
-
     /**
-     * 生成一个 AI 假人。
-     * @param name 假人名称（不含 [AI] 前缀）
-     * @param x, y, z 生成坐标
-     * @return 创建的 FakePlayer 实例
+     * 获取所有 Carpet 假人（名字包含在 Carpet 玩家列表中的）。
      */
-    fun spawn(server: MinecraftServer, name: String, x: Double, y: Double, z: Double, yaw: Float = 0f, pitch: Float = 0f): FakePlayer {
-        // 如果已存在同名假人，先移除
-        if (bots.containsKey(name)) {
-            kill(server, name)
+    fun getCarpetBots(server: MinecraftServer): List<ServerPlayer> {
+        return server.playerList.players.filter { player ->
+            val name = player.name.string
+            // Carpet 假人是普通的 ServerPlayer，通过名字特征识别
+            name.startsWith("[") && name.contains("]") ||
+            name.startsWith("AI_") ||
+            name.contains("AI")
         }
-
-        val level = server.overworld()
-        val fakePlayer = FakePlayer.create(level, name, x, y, z, yaw, pitch)
-        bots[name] = fakePlayer
-        return fakePlayer
     }
 
     /**
      * 获取指定名称的假人。
-     * 支持直接名称或带 AI_ 前缀的名称。
      */
     fun getBot(server: MinecraftServer, name: String): ServerPlayer? {
-        // 先查内部 map（去掉可能的 AI_ 前缀）
-        val cleanName = name.removePrefix("AI_")
-        bots[cleanName]?.let { return it }
+        // 直接查找
+        val direct = server.playerList.getPlayerByName(name)
+        if (direct != null) return direct
 
-        // 尝试在所有在线玩家中查找
+        // 带前缀查找
+        val withPrefix = server.playerList.getPlayerByName("AI_$name")
+        if (withPrefix != null) return withPrefix
+
+        // 模糊匹配
         return server.playerList.players.find { player ->
             val playerName = player.name.string
-            playerName == name || playerName == "AI_$name" || playerName == cleanName
+            playerName == name || playerName == "AI_$name" || playerName.contains(name)
         }
     }
 
@@ -55,37 +49,33 @@ object FakePlayerManager {
     }
 
     /**
-     * 获取所有 AI 假人名称。
+     * 获取所有假人名称。
      */
     fun listNames(server: MinecraftServer): List<String> {
-        return bots.keys.toList()
+        return getCarpetBots(server).map { it.name.string }
     }
 
     /**
-     * 移除指定假人。
+     * 移除指定假人（通过 Carpet 命令）。
      */
     fun kill(server: MinecraftServer, name: String): Boolean {
-        val cleanName = name.removePrefix("[AI] ").removePrefix("[AI]")
-        val fakePlayer = bots.remove(cleanName) ?: return false
-        FakePlayer.remove(fakePlayer)
-        return true
+        return try {
+            val bot = getBot(server, name) ?: return false
+            val botName = bot.name.string
+            server.commands.performPrefixedCommand(
+                server.createCommandSourceStack(),
+                "/player $botName kill"
+            )
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /**
      * 移除所有假人。
      */
     fun killAll(server: MinecraftServer) {
-        bots.values.forEach { player ->
-            FakePlayer.remove(player)
-        }
-        bots.clear()
-    }
-
-    /**
-     * 获取内部的 FakePlayer 实例（需要直接操作 ActionPack 时使用）。
-     */
-    fun getFakePlayer(name: String): FakePlayer? {
-        val cleanName = name.removePrefix("AI_")
-        return bots[cleanName]
+        listNames(server).forEach { kill(server, it) }
     }
 }

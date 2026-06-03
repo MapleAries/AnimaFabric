@@ -46,6 +46,7 @@
 		"minecraft": "~26.1.2",
 		"java": ">=25",
 		"fabric-api": "*",
-		"fabric-language-kotlin": "*"
+		"fabric-language-kotlin": "*",
+		"carpet": "*"
 	}
 }
