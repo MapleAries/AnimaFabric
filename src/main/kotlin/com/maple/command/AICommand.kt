@@ -54,6 +54,13 @@ object AICommand {
                             .executes { spawnBot(it) }
                         )
                     )
+                    .then(Commands.literal("gamemode")
+                        .then(Commands.argument("name", StringArgumentType.word())
+                            .then(Commands.argument("mode", StringArgumentType.word())
+                                .executes { setGameMode(it) }
+                            )
+                        )
+                    )
                     .then(Commands.literal("plan")
                         .executes { listPlans(it) }
                         .then(Commands.literal("resume")
@@ -195,6 +202,36 @@ object AICommand {
             source.sendFailure(Component.literal("生成假人失败: ${e.message}"))
             return 0
         }
+
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun setGameMode(context: CommandContext<CommandSourceStack>): Int {
+        val name = StringArgumentType.getString(context, "name")
+        val modeStr = StringArgumentType.getString(context, "mode")
+        val source = context.source
+
+        val bot = com.maple.entity.FakePlayerManager.getBot(source.server, name)
+        if (bot == null) {
+            source.sendFailure(Component.literal("假人 '$name' 不存在"))
+            return 0
+        }
+
+        val gameType = when (modeStr.lowercase()) {
+            "survival", "s", "0" -> net.minecraft.world.level.GameType.SURVIVAL
+            "creative", "c", "1" -> net.minecraft.world.level.GameType.CREATIVE
+            "adventure", "a", "2" -> net.minecraft.world.level.GameType.ADVENTURE
+            "spectator", "sp", "3" -> net.minecraft.world.level.GameType.SPECTATOR
+            else -> {
+                source.sendFailure(Component.literal("无效游戏模式: $modeStr（可用：survival/creative/adventure/spectator）"))
+                return 0
+            }
+        }
+
+        bot.gameMode.changeGameModeForPlayer(gameType)
+        source.sendSuccess({
+            Component.literal("已将 '$name' 切换为 ${gameType.name} 模式")
+        }, true)
 
         return Command.SINGLE_SUCCESS
     }
