@@ -32,6 +32,16 @@ class TaskPlanner(
         private set
 
     /**
+     * 发送聊天消息。
+     */
+    private fun sendChat(message: String) {
+        server.playerList.broadcastSystemMessage(
+            net.minecraft.network.chat.Component.literal("[$botName] $message"),
+            false
+        )
+    }
+
+    /**
      * 处理一个复杂任务。
      * 1. 分解任务 → 写入文件
      * 2. 逐步执行 → 实时更新文件
@@ -82,6 +92,8 @@ class TaskPlanner(
         val results = mutableListOf<String>()
         var consecutiveFailures = 0
 
+        sendChat("开始执行任务：${plan.task.take(30)}（共 ${plan.steps.size} 步）")
+
         // 从当前步骤开始（支持恢复）
         var startIndex = plan.currentStep
 
@@ -99,6 +111,7 @@ class TaskPlanner(
             step.status = StepStatus.EXECUTING
             TaskPlanManager.update(plan, planPath)
 
+            sendChat("⏳ 步骤 ${step.id}/${plan.steps.size}：${step.description}")
             println("[AnimaFabric] 执行步骤 ${step.id}/${plan.steps.size}: ${step.description}")
 
             // 执行
@@ -109,12 +122,14 @@ class TaskPlanner(
 
             if (failed) {
                 step.status = StepStatus.FAILED
+                sendChat("❌ 步骤 ${step.id} 失败：$result")
                 consecutiveFailures++
                 isFailed = true
                 failReason = result
 
                 if (consecutiveFailures >= 2) {
                     // 连续失败，尝试重新规划
+                    sendChat("⚠️ 连续失败，正在重新规划...")
                     println("[AnimaFabric] 连续失败，尝试重新规划...")
                     val replanned = replanRemaining(plan.task, results)
                     if (replanned.isNotEmpty()) {
@@ -149,6 +164,7 @@ class TaskPlanner(
             consecutiveFailures = 0
             isFailed = false
             results.add("步骤 ${step.id}: ${step.description} → $result")
+            sendChat("✅ 步骤 ${step.id} 完成：$result")
             TaskPlanManager.update(plan, planPath)
         }
 
@@ -156,8 +172,10 @@ class TaskPlanner(
         if (!isFailed) {
             plan.status = PlanStatus.COMPLETED
             isComplete = true
+            sendChat("🎉 任务完成！共 ${plan.steps.size} 步")
         } else {
             plan.status = PlanStatus.FAILED
+            sendChat("❌ 任务失败：$failReason")
         }
         TaskPlanManager.update(plan, planPath)
 
