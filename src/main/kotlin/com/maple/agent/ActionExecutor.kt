@@ -95,10 +95,10 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
         val startPos = fakePlayer.position()
         val targetPos = BlockPos(x, y, z)
+        val level = fakePlayer.level()
 
         // 使用 A* 寻路
-        val level = fakePlayer.level()
-        val path = com.maple.pathfinding.AStarPathfinder.findPath(level, fakePlayer.blockPosition(), targetPos)
+        var path = com.maple.pathfinding.AStarPathfinder.findPath(level, fakePlayer.blockPosition(), targetPos)
 
         if (path.isEmpty()) {
             // A* 找不到路径，fallback 到直线移动
@@ -118,16 +118,32 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             return "已移动到 ($x, $y, $z) 附近（移动了${"%.1f".format(movedDistance)}格，无路径）"
         }
 
-        // 使用 PathFollower 沿 A* 路径移动
+        // 使用 PathFollower 沿 A* 路径移动（支持动态重寻路）
         val pathFollower = com.maple.pathfinding.PathFollower()
         pathFollower.setPath(path)
 
         var ticks = 0
-        val maxTicks = 400 // 最多 20 秒
+        val maxTicks = 600 // 最多 30 秒
+        var lastRecalcTicks = 0
+
         while (!pathFollower.isComplete() && !pathFollower.isFailed() && ticks < maxTicks) {
             pathFollower.tick(fakePlayer)
             kotlinx.coroutines.delay(50) // 一个 tick
             ticks++
+
+            // 动态重寻路：每 3 秒检查一次，如果卡住则重新计算
+            if (ticks - lastRecalcTicks > 60 && ticks > 60) {
+                val currentPos = fakePlayer.blockPosition()
+                val distToTarget = currentPos.distSqr(targetPos)
+                if (distToTarget > 4) { // 还没到目标
+                    val newPath = com.maple.pathfinding.AStarPathfinder.findPath(level, currentPos, targetPos)
+                    if (newPath.isNotEmpty() && newPath.size < pathFollower.getPathLength() - pathFollower.getCurrentIndex()) {
+                        // 新路径更短，使用新路径
+                        pathFollower.setPath(newPath)
+                        lastRecalcTicks = ticks
+                    }
+                }
+            }
         }
 
         fakePlayer.actionPack.stopAll()
