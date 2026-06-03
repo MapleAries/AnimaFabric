@@ -139,6 +139,11 @@ $senderInfo
     }
 
     /**
+     * 获取玩家准星对着的方块信息（公开方法）。
+     */
+    fun getCrosshairTargetString(player: Player): String = getCrosshairTarget(player)
+
+    /**
      * 获取玩家准星对着的方块信息。
      */
     private fun getCrosshairTarget(player: Player): String {

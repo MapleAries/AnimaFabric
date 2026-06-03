@@ -48,7 +48,7 @@ class TaskPlanner(
      * 2. 逐步执行 → 实时更新文件
      */
     suspend fun processTask(command: String): String {
-        // 1. 分解任务
+        // 1. 分解任务（代词上下文在 prompt 中处理）
         val decomposed = decomposeTask(command)
         if (decomposed.isEmpty()) {
             // fallback 到 PipelineExecutor
@@ -214,11 +214,52 @@ class TaskPlanner(
     }
 
     /**
+     * 构建代词上下文。
+     * 根据指令中的代词（我/你）确定坐标来源。
+     */
+    private fun buildPronounContext(command: String): String {
+        val hasWo = command.contains("我")    // 我 = 指令发送者
+        val hasNi = command.contains("你")    // 你 = 假人
+
+        val bot = server.playerList.getPlayerByName(botName)
+        val botPos = bot?.blockPosition()
+        val senderPos = commandSender?.blockPosition()
+
+        val sb = StringBuilder()
+
+        if (hasNi && bot != null) {
+            val botTarget = WorldPerception.getCrosshairTargetString(bot)
+            sb.appendLine("## \"你\" = 假人 $botName")
+            sb.appendLine("- 假人位置：(${botPos!!.x}, ${botPos.y}, ${botPos.z})")
+            sb.appendLine("- 假人准星目标：$botTarget")
+            sb.appendLine("- \"你面前的方块\" = 假人准星目标坐标")
+            sb.appendLine("- \"你脚下\" = 假人位置 Y-1")
+            sb.appendLine()
+        }
+
+        if (hasWo && commandSender != null) {
+            val senderTarget = WorldPerception.getCrosshairTargetString(commandSender!!)
+            sb.appendLine("## \"我\" = 指令发送者 ${commandSender!!.name.string}")
+            sb.appendLine("- 发送者位置：(${senderPos!!.x}, ${senderPos.y}, ${senderPos.z})")
+            sb.appendLine("- 发送者准星目标：$senderTarget")
+            sb.appendLine("- \"我面前的方块\" = 发送者准星目标坐标")
+            sb.appendLine("- \"我脚下\" = 发送者位置 Y-1")
+            sb.appendLine("- \"到我这里来\" = 移动到发送者位置")
+            sb.appendLine()
+        }
+
+        return sb.toString().trimEnd()
+    }
+
+    /**
      * 分解任务为步骤序列。
      */
     private suspend fun decomposeTask(command: String): List<TaskStep> {
         val bot = server.playerList.getPlayerByName(botName)
         val worldState = if (bot != null) WorldPerception.scan(bot, commandSender) else "Bot not online"
+
+        // 构建代词上下文
+        val pronounContext = buildPronounContext(command)
 
         val prompt = """将Minecraft任务分解为命令步骤。每行一个命令，只输出命令。
 
@@ -230,25 +271,10 @@ class TaskPlanner(
 重要规则：
 1. 每个命令只出现一次，不要重复
 2. 如果需要放置方块但背包为空，先用 !craft 获取方块
-3. 坐标必须来自世界状态中的"位置"字段，不要编造坐标
-4. "在我脚下"表示位置的 Y-1
-5. 最多 6 个步骤
+3. 坐标必须来自世界状态，不要编造坐标
+4. 最多 6 个步骤
 
-示例：
-任务：挖木头做木镐
-!scanArea(10)
-!mineBlock(10,65,-5)
-!craft(planks)
-!craft(crafting_table)
-!craft(wooden_pickaxe)
-
-任务：蹲下然后站起来
-!sneak()
-!sneak()
-
-任务：在我脚下放一个石头（假设机器人在 -3,63,-16）
-!craft(cobblestone)
-!placeBlock(-3,62,-16,cobblestone)
+$pronounContext
 
 当前世界状态：
 $worldState
