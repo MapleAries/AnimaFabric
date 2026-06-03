@@ -54,6 +54,14 @@ object AICommand {
                             .executes { spawnBot(it) }
                         )
                     )
+                    .then(Commands.literal("plan")
+                        .executes { listPlans(it) }
+                        .then(Commands.literal("resume")
+                            .then(Commands.argument("file", StringArgumentType.greedyString())
+                                .executes { resumePlan(it) }
+                            )
+                        )
+                    )
                     .then(Commands.literal("config")
                         .then(Commands.literal("show")
                             .executes { showConfig(it) }
@@ -186,6 +194,74 @@ object AICommand {
         } catch (e: Exception) {
             source.sendFailure(Component.literal("生成假人失败: ${e.message}"))
             return 0
+        }
+
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun listPlans(context: CommandContext<CommandSourceStack>): Int {
+        val plans = com.maple.agent.TaskPlanManager.listPlanFiles()
+        if (plans.isEmpty()) {
+            context.source.sendSuccess({
+                Component.literal("没有任务计划文件。计划目录: ${com.maple.agent.TaskPlanManager.getPlanDir()}")
+            }, false)
+            return Command.SINGLE_SUCCESS
+        }
+
+        context.source.sendSuccess({
+            Component.literal("=== 任务计划列表 ===")
+        }, false)
+
+        for ((index, path) in plans.take(10).withIndex()) {
+            val plan = com.maple.agent.TaskPlanManager.load(path)
+            if (plan != null) {
+                val status = when (plan.status) {
+                    com.maple.agent.PlanStatus.PENDING -> "⏳ 待执行"
+                    com.maple.agent.PlanStatus.EXECUTING -> "🔄 执行中"
+                    com.maple.agent.PlanStatus.COMPLETED -> "✅ 已完成"
+                    com.maple.agent.PlanStatus.FAILED -> "❌ 失败"
+                    com.maple.agent.PlanStatus.PAUSED -> "⏸ 已暂停"
+                }
+                val doneCount = plan.steps.count { it.status == com.maple.agent.StepStatus.DONE }
+                context.source.sendSuccess({
+                    Component.literal("${index + 1}. $status ${plan.task.take(30)} [$doneCount/${plan.steps.size}] — ${path.fileName}")
+                }, false)
+            }
+        }
+
+        context.source.sendSuccess({
+            Component.literal("使用 /ai plan resume <文件名> 恢复执行")
+        }, false)
+
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun resumePlan(context: CommandContext<CommandSourceStack>): Int {
+        val fileName = StringArgumentType.getString(context, "file")
+        val planPath = com.maple.agent.TaskPlanManager.getPlanDir().resolve(fileName)
+
+        if (!java.nio.file.Files.exists(planPath)) {
+            context.source.sendFailure(Component.literal("计划文件不存在: $fileName"))
+            return 0
+        }
+
+        val ctrl = controller ?: run {
+            context.source.sendFailure(Component.literal("AgentController 未初始化"))
+            return 0
+        }
+
+        context.source.sendSuccess({
+            Component.literal("正在恢复计划: $fileName")
+        }, false)
+
+        // 在协程中执行
+        val botName = "plan-resume"
+        ctrl.sendCommand(botName, "resume:$planPath") { result ->
+            context.source.server.execute {
+                context.source.sendSuccess({
+                    Component.literal("[计划] $result")
+                }, false)
+            }
         }
 
         return Command.SINGLE_SUCCESS
