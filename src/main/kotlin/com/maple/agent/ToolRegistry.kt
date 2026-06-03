@@ -136,7 +136,46 @@ object ToolRegistry {
             name = "craft",
             description = "合成物品。自动使用背包中的材料合成。",
             parameters = listOf(
-                ToolParameter("item", "string", "物品名称：planks/crafting_table/stick/wooden_pickaxe/wooden_axe/wooden_sword/stone_pickaxe/stone_axe/iron_pickaxe/iron_sword/furnace/torch/coal_iron_ingot 等")
+                ToolParameter("item", "string", "物品名称：planks/crafting_table/stick/wooden_pickaxe/wooden_axe/wooden_sword/stone_pickaxe/stone_axe/iron_pickaxe/iron_sword/furnace/torch/cobblestone 等")
+            )
+        ),
+        Tool(
+            name = "drop",
+            description = "丢出物品。",
+            parameters = listOf(
+                ToolParameter("slot", "string", "槽位：mainhand/offhand/0-35/all", required = false),
+                ToolParameter("continuous", "boolean", "是否持续丢出", required = false)
+            )
+        ),
+        Tool(
+            name = "hotbar",
+            description = "切换快捷栏槽位。",
+            parameters = listOf(
+                ToolParameter("slot", "number", "槽位 1-9")
+            )
+        ),
+        Tool(
+            name = "swapHands",
+            description = "交换主副手物品。",
+            parameters = emptyList()
+        ),
+        Tool(
+            name = "mount",
+            description = "骑乘坐骑或实体。",
+            parameters = listOf(
+                ToolParameter("anything", "boolean", "是否骑乘任意实体", required = false)
+            )
+        ),
+        Tool(
+            name = "dismount",
+            description = "下马。",
+            parameters = emptyList()
+        ),
+        Tool(
+            name = "sprint",
+            description = "冲刺/停止冲刺。",
+            parameters = listOf(
+                ToolParameter("enable", "boolean", "true=冲刺, false=停止", required = false)
             )
         )
     )

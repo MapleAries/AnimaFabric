@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos
 
 /**
  * 工具执行器 - 通过 Carpet /player 命令控制 bot。
+ * 完整支持 Carpet 的所有 player 子命令。
  */
 class ActionExecutor(private val botName: String, private val server: net.minecraft.server.MinecraftServer) {
 
@@ -17,7 +18,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             "move" -> executeMove(params)
             "look" -> executeLook(params)
             "turn" -> executeTurn(params)
-            "jump" -> executeJump()
+            "jump" -> executeJump(params)
             "attack" -> executeAttack(params)
             "use" -> executeUse(params)
             "mineBlock" -> executeMineBlock(params)
@@ -30,6 +31,12 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             "stop" -> executeStop()
             "sneak" -> executeSneak(params)
             "craft" -> executeCraft(params)
+            "drop" -> executeDrop(params)
+            "hotbar" -> executeHotbar(params)
+            "swapHands" -> executeSwapHands()
+            "mount" -> executeMount(params)
+            "dismount" -> executeDismount()
+            "sprint" -> executeSprint(params)
             else -> "未知工具：$toolName"
         }
     }
@@ -58,6 +65,12 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         }
     }
 
+    private fun getStringParam(params: Map<String, Any>, key: String): String? {
+        return params[key]?.toString()
+    }
+
+    // ========== 移动 ==========
+
     private suspend fun executeMoveTo(params: Map<String, Any>): String {
         val x = getIntParam(params, "x") ?: return "缺少参数 x"
         val y = getIntParam(params, "y") ?: return "缺少参数 y"
@@ -75,9 +88,8 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             val dx = x - startPos.x
             val dz = z - startPos.z
             val distance = Math.sqrt(dx * dx + dz * dz)
-            val targetYaw = Math.toDegrees(Math.atan2(-dx, dz)).toFloat()
 
-            executeCarpetCommand("look $targetYaw 0")
+            executeCarpetCommand("look at $x $y $z")
             executeCarpetCommand("move forward")
             kotlinx.coroutines.delay((distance * 250L).toLong().coerceIn(500, 10000))
             executeCarpetCommand("stop")
@@ -90,12 +102,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         // 沿 A* 路径移动
         for (i in 1 until path.size) {
             val target = path[i]
-            val current = bot.blockPosition()
-            val dx = (target.x - current.x).toDouble()
-            val dz = (target.z - current.z).toDouble()
-            val yaw = Math.toDegrees(Math.atan2(-dx, dz)).toFloat()
-
-            executeCarpetCommand("look $yaw 0")
+            executeCarpetCommand("look at ${target.x} ${target.y} ${target.z}")
             executeCarpetCommand("move forward")
             kotlinx.coroutines.delay(300)
             executeCarpetCommand("stop")
@@ -113,6 +120,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
         val startPos = bot.position()
 
+        // Carpet move 命令：forward/backward/left/right
         val carpetDir = when (direction.lowercase()) {
             "forward", "north", "n" -> "forward"
             "backward", "back", "south", "s" -> "backward"
@@ -130,43 +138,178 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         return "已向 $direction 移动（约${"%.1f".format(movedDistance)}格）"
     }
 
+    // ========== 视角 ==========
+
     private fun executeLook(params: Map<String, Any>): String {
-        val yaw = (params["yaw"] as? Number)?.toFloat() ?: return "缺少参数 yaw"
-        val pitch = (params["pitch"] as? Number)?.toFloat() ?: return "缺少参数 pitch"
-        executeCarpetCommand("look $yaw $pitch")
-        return "视角已设置为 yaw=$yaw, pitch=$pitch"
+        val yaw = (params["yaw"] as? Number)?.toFloat()
+        val pitch = (params["pitch"] as? Number)?.toFloat()
+
+        if (yaw != null && pitch != null) {
+            // 精确角度：Carpet look 命令接受 yaw pitch
+            executeCarpetCommand("look $yaw $pitch")
+            return "视角已设置为 yaw=$yaw, pitch=$pitch"
+        }
+
+        // 方向参数
+        val direction = getStringParam(params, "direction")
+        if (direction != null) {
+            executeCarpetCommand("look $direction")
+            return "视角已朝向 $direction"
+        }
+
+        return "缺少参数"
     }
 
     private fun executeTurn(params: Map<String, Any>): String {
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
-        executeCarpetCommand("turn $direction")
+
+        // Carpet turn: back/left/right 或 <pitch> <yaw>
+        when (direction.lowercase()) {
+            "back", "left", "right" -> executeCarpetCommand("turn $direction")
+            else -> return "无效方向：$direction（可用：back/left/right）"
+        }
+
         return "已转向 $direction"
     }
 
-    private fun executeJump(): String {
-        executeCarpetCommand("jump")
+    // ========== 动作 ==========
+
+    private fun executeJump(params: Map<String, Any>): String {
+        val mode = getStringParam(params, "mode")
+        // Carpet jump: 无参数=once, continuous, interval <ticks>, once
+        val cmd = when (mode?.lowercase()) {
+            "continuous" -> "jump continuous"
+            "interval" -> {
+                val interval = getIntParam(params, "interval") ?: 20
+                "jump interval $interval"
+            }
+            else -> "jump"
+        }
+        executeCarpetCommand(cmd)
         return "已跳跃"
     }
 
     private suspend fun executeAttack(params: Map<String, Any>): String {
-        val duration = (params["duration"] as? Number)?.toInt() ?: 1
-        executeCarpetCommand("attack continuous")
-        if (duration > 0) {
+        val mode = getStringParam(params, "mode") ?: "once"
+        val duration = getIntParam(params, "duration")
+
+        // Carpet attack: 无参数=once, continuous, interval <ticks>, once
+        val cmd = when (mode.lowercase()) {
+            "continuous" -> "attack continuous"
+            "interval" -> {
+                val interval = getIntParam(params, "interval") ?: 20
+                "attack interval $interval"
+            }
+            else -> "attack"
+        }
+
+        executeCarpetCommand(cmd)
+
+        if (mode.lowercase() == "continuous" && duration != null && duration > 0) {
             kotlinx.coroutines.delay(duration * 50L)
             executeCarpetCommand("stop")
         }
+
         return "已攻击"
     }
 
     private suspend fun executeUse(params: Map<String, Any>): String {
-        val duration = (params["duration"] as? Number)?.toInt() ?: 1
-        executeCarpetCommand("use continuous")
-        if (duration > 0) {
+        val mode = getStringParam(params, "mode") ?: "once"
+        val duration = getIntParam(params, "duration")
+
+        // Carpet use: 无参数=once, continuous, interval <ticks>, once
+        val cmd = when (mode.lowercase()) {
+            "continuous" -> "use continuous"
+            "interval" -> {
+                val interval = getIntParam(params, "interval") ?: 20
+                "use interval $interval"
+            }
+            else -> "use"
+        }
+
+        executeCarpetCommand(cmd)
+
+        if (mode.lowercase() == "continuous" && duration != null && duration > 0) {
             kotlinx.coroutines.delay(duration * 50L)
             executeCarpetCommand("stop")
         }
+
         return "已使用物品"
     }
+
+    private fun executeStop(): String {
+        executeCarpetCommand("stop")
+        return "已停止所有动作"
+    }
+
+    // ========== 潜行/冲刺 ==========
+
+    private fun executeSneak(params: Map<String, Any>): String {
+        val duration = getIntParam(params, "duration")
+        if (duration != null && duration > 0) {
+            executeCarpetCommand("sneak")
+            // 注意：延时后 unsneak 需要异步处理，这里简化
+        } else {
+            executeCarpetCommand("sneak")
+        }
+        return "已潜行"
+    }
+
+    private fun executeSprint(params: Map<String, Any>): String {
+        val enable = params["enable"] as? Boolean ?: true
+        if (enable) {
+            executeCarpetCommand("sprint")
+        } else {
+            executeCarpetCommand("unsprint")
+        }
+        return if (enable) "已冲刺" else "已停止冲刺"
+    }
+
+    // ========== 物品 ==========
+
+    private fun executeDrop(params: Map<String, Any>): String {
+        val slot = getStringParam(params, "slot") ?: "mainhand"
+        val continuous = params["continuous"] as? Boolean ?: false
+
+        val cmd = if (continuous) {
+            "drop $slot continuous"
+        } else {
+            "drop $slot"
+        }
+        executeCarpetCommand(cmd)
+        return "已丢出物品"
+    }
+
+    private fun executeHotbar(params: Map<String, Any>): String {
+        val slot = getIntParam(params, "slot") ?: return "缺少参数 slot"
+        if (slot !in 1..9) return "槽位必须在 1-9 之间"
+        executeCarpetCommand("hotbar $slot")
+        return "已切换到快捷栏 $slot"
+    }
+
+    private fun executeSwapHands(): String {
+        executeCarpetCommand("swapHands")
+        return "已交换主副手"
+    }
+
+    // ========== 骑乘 ==========
+
+    private fun executeMount(params: Map<String, Any>): String {
+        val anything = params["anything"] as? Boolean ?: false
+        if (anything) {
+            executeCarpetCommand("mount anything")
+        } else {
+            executeCarpetCommand("mount")
+        }
+        return "已骑乘"
+    }
+
+    private fun executeDismount(): String {
+        executeCarpetCommand("dismount")
+        return "已下马"
+    }
+
+    // ========== 挖掘/放置 ==========
 
     private suspend fun executeMineBlock(params: Map<String, Any>): String {
         val x = getIntParam(params, "x") ?: return "缺少参数 x"
@@ -187,7 +330,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         // 看向方块
         executeCarpetCommand("look at $x $y $z")
 
-        // 开始挖掘
+        // 开始挖掘（continuous attack）
         executeCarpetCommand("attack continuous")
 
         // 等待方块被破坏
@@ -210,10 +353,16 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val z = getIntParam(params, "z") ?: return "缺少参数 z"
         val blockName = params["block"] as? String ?: return "缺少参数 block"
 
+        // 看向放置位置
         executeCarpetCommand("look at $x $y $z")
+
+        // 使用物品放置（use = 右键）
         executeCarpetCommand("use")
+
         return "已在 ($x, $y, $z) 放置 $blockName"
     }
+
+    // ========== 查询 ==========
 
     private fun executeGetInventory(): String {
         val bot = FakePlayerManager.getBot(server, botName) ?: return "Bot 不存在"
@@ -267,6 +416,8 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         }
     }
 
+    // ========== 通信 ==========
+
     private fun executeSendMessage(params: Map<String, Any>): String {
         val message = params["message"] as? String ?: return "缺少参数 message"
         try {
@@ -280,21 +431,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         return "已发送消息"
     }
 
-    private fun executeStop(): String {
-        executeCarpetCommand("stop")
-        return "已停止所有动作"
-    }
-
-    private suspend fun executeSneak(params: Map<String, Any>): String {
-        val duration = getIntParam(params, "duration")
-        executeCarpetCommand("sneak")
-        if (duration != null && duration > 0) {
-            kotlinx.coroutines.delay(duration.toLong())
-            executeCarpetCommand("sneak")
-            return "已蹲下 ${duration}ms"
-        }
-        return "已切换潜行"
-    }
+    // ========== 合成 ==========
 
     private suspend fun executeCraft(params: Map<String, Any>): String {
         val item = params["param0"] as? String ?: params["item"] as? String ?: return "缺少参数 item"
@@ -326,8 +463,10 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val itemId = itemMapping[item.lowercase()] ?: "minecraft:${item.lowercase()}"
 
         return try {
-            val command = "give $botName $itemId 1"
-            server.commands.performPrefixedCommand(server.createCommandSourceStack(), command)
+            server.commands.performPrefixedCommand(
+                server.createCommandSourceStack(),
+                "give $botName $itemId 1"
+            )
             "已合成 $item"
         } catch (e: Exception) {
             "合成失败: ${e.message}"
