@@ -120,16 +120,17 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
         val startPos = bot.position()
 
-        // Carpet move 命令：forward/backward/left/right
-        val carpetDir = when (direction.lowercase()) {
-            "forward", "north", "n" -> "forward"
-            "backward", "back", "south", "s" -> "backward"
-            "left", "west", "w" -> "left"
-            "right", "east", "e" -> "right"
+        // 先转向，再向前走（避免横着走）
+        when (direction.lowercase()) {
+            "forward", "north", "n" -> { /* 已经面朝前方，无需转向 */ }
+            "backward", "back", "south", "s" -> executeCarpetCommand("turn back")
+            "left", "west", "w" -> executeCarpetCommand("turn left")
+            "right", "east", "e" -> executeCarpetCommand("turn right")
             else -> return "无效方向：$direction"
         }
 
-        executeCarpetCommand("move $carpetDir")
+        // 转向后向前走
+        executeCarpetCommand("move forward")
         kotlinx.coroutines.delay((distance * 250L).coerceAtMost(5000L))
         executeCarpetCommand("stop")
 
