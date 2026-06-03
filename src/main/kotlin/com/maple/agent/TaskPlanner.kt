@@ -203,10 +203,13 @@ class TaskPlanner(
         return result.startsWith("Failed") ||
                result.startsWith("Error") ||
                result.startsWith("挖掘失败") ||
+               result.startsWith("放置失败") ||
                result.startsWith("移动未完成") ||
                result.startsWith("Bot 不存在") ||
                result.startsWith("未知工具") ||
-               result.startsWith("无效方向")
+               result.startsWith("无效方向") ||
+               result.startsWith("合成失败") ||
+               result.startsWith("无法")
     }
 
     /**
@@ -226,8 +229,9 @@ class TaskPlanner(
 重要规则：
 1. 每个命令只出现一次，不要重复
 2. 如果需要放置方块但背包为空，先用 !craft 获取方块
-3. 坐标必须来自世界状态
-4. 最多 6 个步骤
+3. 坐标必须来自世界状态中的"位置"字段，不要编造坐标
+4. "在我脚下"表示位置的 Y-1
+5. 最多 6 个步骤
 
 示例：
 任务：挖木头做木镐
@@ -241,9 +245,9 @@ class TaskPlanner(
 !sneak()
 !sneak()
 
-任务：在我脚下放一个石头
+任务：在我脚下放一个石头（假设机器人在 -3,63,-16）
 !craft(cobblestone)
-!placeBlock(当前X, 当前Y-1, 当前Z, cobblestone)
+!placeBlock(-3,62,-16,cobblestone)
 
 当前世界状态：
 $worldState
