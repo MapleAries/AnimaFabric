@@ -19,7 +19,8 @@ class TaskPlanner(
     private val botName: String,
     private val server: net.minecraft.server.MinecraftServer,
     private val llmClient: LLMClient,
-    private val actionExecutor: ActionExecutor
+    private val actionExecutor: ActionExecutor,
+    private val commandSender: net.minecraft.server.level.ServerPlayer? = null
 ) {
     private var currentPlan: TaskPlan? = null
     private var currentPlanPath: Path? = null
@@ -217,7 +218,7 @@ class TaskPlanner(
      */
     private suspend fun decomposeTask(command: String): List<TaskStep> {
         val bot = server.playerList.getPlayerByName(botName)
-        val worldState = if (bot != null) WorldPerception.scan(bot) else "Bot not online"
+        val worldState = if (bot != null) WorldPerception.scan(bot, commandSender) else "Bot not online"
 
         val prompt = """将Minecraft任务分解为命令步骤。每行一个命令，只输出命令。
 
@@ -274,7 +275,7 @@ $worldState
      */
     private suspend fun replanRemaining(originalTask: String, completedResults: List<String>): List<TaskStep> {
         val bot = server.playerList.getPlayerByName(botName)
-        val worldState = if (bot != null) WorldPerception.scan(bot) else "Bot not online"
+        val worldState = if (bot != null) WorldPerception.scan(bot, commandSender) else "Bot not online"
 
         val completed = completedResults.joinToString("\n")
 

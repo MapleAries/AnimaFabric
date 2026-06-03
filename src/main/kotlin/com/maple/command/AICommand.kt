@@ -99,11 +99,18 @@ object AICommand {
             return 0
         }
 
+        // 获取指令发送者（真实玩家）
+        val sender = try {
+            context.source.playerOrException
+        } catch (e: Exception) {
+            null
+        }
+
         context.source.sendSuccess({
             Component.literal("[$name] 正在思考...")
         }, false)
 
-        ctrl.sendCommand(name, command) { result ->
+        ctrl.sendCommand(name, command, sender) { result ->
             context.source.server.execute {
                 context.source.sendSuccess({
                     Component.literal("[$name] $result")

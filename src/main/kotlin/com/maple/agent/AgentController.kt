@@ -27,8 +27,12 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
 
     /**
      * 向指定假人发送指令。
+     * @param name 假人名称
+     * @param command 指令内容
+     * @param sender 指令发送者（真实玩家），用于获取准星目标等上下文
+     * @param onComplete 完成回调
      */
-    fun sendCommand(name: String, command: String, onComplete: (String) -> Unit) {
+    fun sendCommand(name: String, command: String, sender: net.minecraft.server.level.ServerPlayer? = null, onComplete: (String) -> Unit) {
         val bot = FakePlayerManager.getBot(server, name)
         if (bot == null) {
             onComplete("假人 '$name' 不存在。请先使用 /player <name> spawn 生成假人。")
@@ -49,9 +53,9 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
 
         jobs[botName] = scope.launch {
             try {
-                println("[AnimaFabric] 指令交给 TaskPlanner 处理: $command")
+                println("[AnimaFabric] 指令交给 TaskPlanner 处理: $command (发送者: ${sender?.name?.string ?: "控制台"})")
                 val actionExecutor = ActionExecutor(botName, server)
-                val taskPlanner = TaskPlanner(botName, server, llmClient, actionExecutor)
+                val taskPlanner = TaskPlanner(botName, server, llmClient, actionExecutor, sender)
                 val result = withTimeout(config.timeout * 2000) {
                     taskPlanner.processTask(command)
                 }

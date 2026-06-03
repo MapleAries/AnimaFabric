@@ -6,9 +6,12 @@ import net.minecraft.world.entity.MobCategory
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.level.Level
 
+/**
+ * 世界感知系统。
+ * 支持准星目标检测和多玩家上下文。
+ */
 object WorldPerception {
 
-    // 重要方块列表（使用显示名称）
     private val IMPORTANT_BLOCKS = setOf(
         "Oak Log", "Birch Log", "Spruce Log", "Jungle Log", "Acacia Log", "Dark Oak Log",
         "Stone", "Cobblestone", "Coal Ore", "Iron Ore", "Gold Ore", "Diamond Ore",
@@ -16,27 +19,20 @@ object WorldPerception {
         "Oak Planks", "Birch Planks", "Spruce Planks"
     )
 
-    // 矿石深度映射（参考 Steve 模）
-    private val ORE_DEPTH_MAP = mapOf(
-        "Diamond Ore" to -59,
-        "Gold Ore" to -16,
-        "Iron Ore" to 64,
-        "Coal Ore" to 80,
-        "Copper Ore" to 48,
-        "Lapis Lazuli Ore" to 0,
-        "Redstone Ore" to -59,
-        "Emerald Ore" to -16
-    )
-
-    fun scan(player: Player): String {
-        val level = player.level()
-        val pos = player.blockPosition()
-        val health = player.health.toInt()
-        val maxHealth = player.maxHealth.toInt()
-        val food = player.foodData.foodLevel
+    /**
+     * 扫描假人周围世界状态。
+     * @param bot 假人
+     * @param commandSender 指令发送者（真实玩家），用于获取准星目标
+     */
+    fun scan(bot: Player, commandSender: Player? = null): String {
+        val level = bot.level()
+        val pos = bot.blockPosition()
+        val health = bot.health.toInt()
+        val maxHealth = bot.maxHealth.toInt()
+        val food = bot.foodData.foodLevel
 
         // 朝向信息
-        val yaw = player.yRot
+        val yaw = bot.yRot
         val facingDirection = getFacingDirection(yaw)
         val facingChinese = getFacingChinese(facingDirection)
 
@@ -46,10 +42,10 @@ object WorldPerception {
         // 地形分析
         val terrainInfo = analyzeTerrain(level, pos)
 
-        // 背包内容（只显示非空格子）
+        // 背包内容
         val inventory = buildString {
-            for (i in 0 until player.inventory.containerSize) {
-                val stack = player.inventory.getItem(i)
+            for (i in 0 until bot.inventory.containerSize) {
+                val stack = bot.inventory.getItem(i)
                 if (!stack.isEmpty) {
                     appendLine("  - [${stack.hoverName.string}] x${stack.count}")
                 }
@@ -57,16 +53,16 @@ object WorldPerception {
         }.ifEmpty { "  （空）" }
 
         // 主手物品
-        val mainHand = player.mainHandItem
+        val mainHand = bot.mainHandItem
         val mainHandStr = if (mainHand.isEmpty) "空手" else "${mainHand.hoverName.string} x${mainHand.count}"
 
-        // 附近实体（只显示敌对）
-        val hostileEntities = level.getEntities(player, player.boundingBox.inflate(16.0)) { true }
+        // 附近敌对实体
+        val hostileEntities = level.getEntities(bot, bot.boundingBox.inflate(16.0)) { true }
             .filter { it.type != EntityType.PLAYER && it.type.category == MobCategory.MONSTER }
-            .sortedBy { it.distanceTo(player) }
+            .sortedBy { it.distanceTo(bot) }
             .take(5)
             .joinToString("\n") { entity ->
-                val dist = "%.1f".format(entity.distanceTo(player))
+                val dist = "%.1f".format(entity.distanceTo(bot))
                 val entityPos = "(${entity.blockPosition().x}, ${entity.blockPosition().y}, ${entity.blockPosition().z})"
                 "  - ${entity.name.string} $entityPos ${dist}格"
             }
@@ -81,8 +77,15 @@ object WorldPerception {
             else -> "夜晚"
         }
 
+        // 指令发送者信息（多玩家上下文）
+        val senderInfo = if (commandSender != null) {
+            buildSenderInfo(commandSender)
+        } else {
+            "  无（直接指令）"
+        }
+
         return """
-=== 基本信息 ===
+=== 假人状态 ===
 位置：(${pos.x}, ${pos.y}, ${pos.z})
 朝向：$facingChinese
 血量：$health/$maxHealth
@@ -101,7 +104,59 @@ $inventory
 
 === 附近敌对实体 ===
 $hostileEntities
+
+=== 指令发送者信息 ===
+$senderInfo
 """.trimIndent()
+    }
+
+    /**
+     * 构建指令发送者（真实玩家）的信息。
+     * 包含位置、朝向、准星目标方块。
+     */
+    private fun buildSenderInfo(sender: Player): String {
+        val pos = sender.blockPosition()
+        val yaw = sender.yRot
+        val facing = getFacingChinese(getFacingDirection(yaw))
+        val health = sender.health.toInt()
+        val food = sender.foodData.foodLevel
+
+        // 准星目标方块
+        val crosshairTarget = getCrosshairTarget(sender)
+
+        return buildString {
+            appendLine("  玩家名：${sender.name.string}")
+            appendLine("  位置：(${pos.x}, ${pos.y}, ${pos.z})")
+            appendLine("  朝向：$facing")
+            appendLine("  血量：$health/20")
+            appendLine("  饥饿：$food/20")
+            appendLine("  准星目标：$crosshairTarget")
+        }.trimEnd()
+    }
+
+    /**
+     * 获取玩家准星对着的方块信息。
+     */
+    private fun getCrosshairTarget(player: Player): String {
+        val hitResult = player.pick(20.0, 1.0f, false)
+
+        return when (hitResult.type) {
+            net.minecraft.world.phys.HitResult.Type.BLOCK -> {
+                val blockHit = hitResult as net.minecraft.world.phys.BlockHitResult
+                val blockPos = blockHit.blockPos
+                val state = player.level().getBlockState(blockPos)
+                val blockName = state.block.name.string
+                val face = blockHit.direction.name.lowercase()
+                "方块 [$blockName] 坐标 (${blockPos.x}, ${blockPos.y}, ${blockPos.z}) 面 $face"
+            }
+            net.minecraft.world.phys.HitResult.Type.ENTITY -> {
+                val entityHit = hitResult as net.minecraft.world.phys.EntityHitResult
+                val entity = entityHit.entity
+                val dist = "%.1f".format(entity.distanceTo(player))
+                "实体 [${entity.name.string}] 距离 ${dist}格"
+            }
+            else -> "无（看向天空或太远）"
+        }
     }
 
     /**
@@ -140,11 +195,9 @@ $hostileEntities
     private fun analyzeTerrain(level: Level, pos: BlockPos): String {
         val info = mutableListOf<String>()
 
-        // 脚下方块
         val below = level.getBlockState(pos.below()).block.name.string
         info.add("脚下：$below")
 
-        // 头顶上方方块
         val aboveBlocks = mutableListOf<String>()
         for (i in 1..5) {
             val block = level.getBlockState(pos.above(i)).block.name.string
@@ -156,7 +209,6 @@ $hostileEntities
             info.add("头顶：${aboveBlocks.joinToString(", ")}")
         }
 
-        // 地面高度
         var groundY = pos.y
         for (y in pos.y downTo pos.y - 10) {
             val block = level.getBlockState(BlockPos(pos.x, y, pos.z))
@@ -167,7 +219,6 @@ $hostileEntities
         }
         info.add("地面高度：Y=$groundY")
 
-        // 天空可见性
         var skyVisible = true
         for (y in pos.y + 1..pos.y + 20) {
             val block = level.getBlockState(BlockPos(pos.x, y, pos.z))
@@ -177,23 +228,6 @@ $hostileEntities
             }
         }
         info.add("天空可见：${if (skyVisible) "是" else "否"}")
-
-        // 周围是否有树木
-        var hasTree = false
-        for (dx in -3..3) {
-            for (dz in -3..3) {
-                for (dy in 1..5) {
-                    val block = level.getBlockState(pos.offset(dx, dy, dz)).block.name.string
-                    if (block.contains("leaves") || block.contains("log")) {
-                        hasTree = true
-                        break
-                    }
-                }
-                if (hasTree) break
-            }
-            if (hasTree) break
-        }
-        if (hasTree) info.add("附近有树木")
 
         return info.joinToString("\n")
     }
