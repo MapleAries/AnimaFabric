@@ -332,14 +332,77 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val blockName = params["block"] as? String ?: return "缺少参数 block"
 
         val fakePlayer = getFakePlayer() ?: return "Bot 不存在或不是 FakePlayer"
+        val level = fakePlayer.level()
 
-        // 看向放置位置
-        fakePlayer.actionPack.lookAtBlock(fakePlayer, BlockPos(x, y, z))
+        // 1. 检查目标位置是否为空
+        val targetPos = BlockPos(x, y, z)
+        val targetState = level.getBlockState(targetPos)
+        if (!targetState.isAir) {
+            return "放置失败：($x, $y, $z) 已有方块 ${targetState.block.name.string}"
+        }
 
-        // 使用物品（放置）
-        fakePlayer.actionPack.start(ActionPack.ActionType.USE, ActionPack.Action.once(ActionPack.ActionType.USE))
+        // 2. 检查玩家主手是否有方块物品
+        val mainHand = fakePlayer.mainHandItem
+        if (mainHand.isEmpty) {
+            return "放置失败：主手没有物品"
+        }
 
-        return "已在 ($x, $y, $z) 放置 $blockName"
+        // 3. 找到相邻的固体方块作为放置面
+        val adjacentFaces = listOf(
+            Pair(targetPos.below(), net.minecraft.core.Direction.UP),      // 脚下
+            Pair(targetPos.above(), net.minecraft.core.Direction.DOWN),    // 头上
+            Pair(targetPos.north(), net.minecraft.core.Direction.SOUTH),   // 北面
+            Pair(targetPos.south(), net.minecraft.core.Direction.NORTH),   // 南面
+            Pair(targetPos.east(), net.minecraft.core.Direction.WEST),     // 东面
+            Pair(targetPos.west(), net.minecraft.core.Direction.EAST)      // 西面
+        )
+
+        var placeAgainst: Pair<BlockPos, net.minecraft.core.Direction>? = null
+        for ((adjacentPos, face) in adjacentFaces) {
+            val adjacentState = level.getBlockState(adjacentPos)
+            if (adjacentState.isSolidRender) {
+                placeAgainst = Pair(adjacentPos, face)
+                break
+            }
+        }
+
+        if (placeAgainst == null) {
+            return "放置失败：($x, $y, $z) 附近没有可放置的方块面"
+        }
+
+        val (againstPos, face) = placeAgainst
+
+        // 4. 看向放置面的中心
+        val faceCenter = net.minecraft.world.phys.Vec3.atCenterOf(againstPos)
+        fakePlayer.actionPack.lookAt(
+            fakePlayer,
+            Math.toDegrees(Math.atan2(faceCenter.x - fakePlayer.x, faceCenter.z - fakePlayer.z)).toFloat(),
+            Math.toDegrees(Math.atan2(
+                faceCenter.y - fakePlayer.eyeY,
+                Math.sqrt((faceCenter.x - fakePlayer.x) * (faceCenter.x - fakePlayer.x) + (faceCenter.z - fakePlayer.z) * (faceCenter.z - fakePlayer.z))
+            )).toFloat()
+        )
+
+        // 5. 执行放置（使用 gameMode.useItemOn）
+        val hitResult = net.minecraft.world.phys.BlockHitResult(
+            net.minecraft.world.phys.Vec3.atCenterOf(againstPos),
+            face,
+            againstPos,
+            false
+        )
+        val result = fakePlayer.gameMode.useItemOn(
+            fakePlayer,
+            level,
+            mainHand,
+            net.minecraft.world.InteractionHand.MAIN_HAND,
+            hitResult
+        )
+
+        return if (result.consumesAction()) {
+            "已在 ($x, $y, $z) 放置 $blockName"
+        } else {
+            "放置失败：无法在 ($x, $y, $z) 放置 $blockName"
+        }
     }
 
     private fun executeGetInventory(): String {
