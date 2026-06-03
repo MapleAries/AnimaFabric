@@ -33,17 +33,17 @@ object FakePlayerManager {
 
     /**
      * 获取指定名称的假人。
-     * 支持直接名称或带 [AI] 前缀的名称。
+     * 支持直接名称或带 AI_ 前缀的名称。
      */
     fun getBot(server: MinecraftServer, name: String): ServerPlayer? {
-        // 先查内部 map（去掉可能的 [AI] 前缀）
-        val cleanName = name.removePrefix("[AI] ").removePrefix("[AI]")
+        // 先查内部 map（去掉可能的 AI_ 前缀）
+        val cleanName = name.removePrefix("AI_")
         bots[cleanName]?.let { return it }
 
-        // 尝试在所有在线玩家中查找（兼容旧的 Carpet 假人）
+        // 尝试在所有在线玩家中查找
         return server.playerList.players.find { player ->
             val playerName = player.name.string
-            playerName == name || playerName == "[AI] $name" || playerName == "[AI]$name"
+            playerName == name || playerName == "AI_$name" || playerName == cleanName
         }
     }
 
@@ -85,7 +85,7 @@ object FakePlayerManager {
      * 获取内部的 FakePlayer 实例（需要直接操作 ActionPack 时使用）。
      */
     fun getFakePlayer(name: String): FakePlayer? {
-        val cleanName = name.removePrefix("[AI] ").removePrefix("[AI]")
+        val cleanName = name.removePrefix("AI_")
         return bots[cleanName]
     }
 }

@@ -98,7 +98,7 @@ class FakePlayer(
          */
         fun create(level: ServerLevel, name: String, x: Double, y: Double, z: Double, yaw: Float = 0f, pitch: Float = 0f): FakePlayer {
             val uuid = UUID.nameUUIDFromBytes("AnimaFabric:$name".toByteArray())
-            val profile = GameProfile(uuid, "[AI]$name")
+            val profile = GameProfile(uuid, "AI_$name")
             val fakePlayer = FakePlayer(level, profile)
 
             fakePlayer.setPos(x, y, z)
