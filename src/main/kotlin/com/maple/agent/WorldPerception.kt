@@ -84,6 +84,9 @@ object WorldPerception {
             "  无（直接指令）"
         }
 
+        // 假人准星目标
+        val botTarget = getCrosshairTarget(bot)
+
         return """
 === 假人状态 ===
 位置：(${pos.x}, ${pos.y}, ${pos.z})
@@ -92,6 +95,7 @@ object WorldPerception {
 饥饿：$food/20
 时间：$timeStr
 主手物品：$mainHandStr
+准星目标：$botTarget
 
 === 地形信息 ===
 $terrainInfo
