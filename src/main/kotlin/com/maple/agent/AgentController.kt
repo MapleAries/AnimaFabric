@@ -55,26 +55,14 @@ class AgentController(private val config: AnimaFabricConfig, private val server:
         // 取消之前的任务
         jobs[botName]?.cancel()
 
-        // 分析指令类型
-        val commandType = CommandRouter.analyze(command)
-
-        // 启动新任务
+        // 启动新任务（所有指令都走 LLM）
         jobs[botName] = scope.launch {
             try {
-                val result = when (commandType) {
-                    is CommandRouter.CommandType.Simple -> {
-                        println("[AnimaFabric] 简单指令: ${commandType.action}")
-                        val executor = SimpleCommandExecutor(botName, server)
-                        executor.execute(commandType.action, commandType.groups)
-                    }
-                    is CommandRouter.CommandType.Complex -> {
-                        println("[AnimaFabric] 复杂指令，交给 TaskPlanner 处理")
-                        val actionExecutor = ActionExecutor(botName, server)
-                        val taskPlanner = TaskPlanner(botName, server, llmClient, actionExecutor)
-                        withTimeout(config.timeout * 2000) {
-                            taskPlanner.processTask(commandType.command)
-                        }
-                    }
+                println("[AnimaFabric] 指令交给 TaskPlanner 处理: $command")
+                val actionExecutor = ActionExecutor(botName, server)
+                val taskPlanner = TaskPlanner(botName, server, llmClient, actionExecutor)
+                val result = withTimeout(config.timeout * 2000) {
+                    taskPlanner.processTask(command)
                 }
                 onComplete(result)
             } catch (e: TimeoutCancellationException) {
