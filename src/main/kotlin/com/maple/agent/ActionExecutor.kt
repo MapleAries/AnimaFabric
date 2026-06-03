@@ -345,18 +345,36 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val targetPos = BlockPos(x, y, z)
         val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
 
-        // 距离检查
+        // 距离检查：超过 3 格先靠近
         val eyePos = bot.eyePosition
         val blockCenter = net.minecraft.world.phys.Vec3.atCenterOf(targetPos)
         val distance = eyePos.distanceTo(blockCenter)
-        if (distance > 6.0) {
-            return "挖掘失败：方块太远（${"%.2f".format(distance)}格，最大 6.0 格），请先靠近。"
+
+        if (distance > 3.0) {
+            // 先移动到方块附近
+            val botPos = bot.blockPosition()
+            val dx = x - botPos.x
+            val dz = z - botPos.z
+            val dist = Math.sqrt((dx * dx + dz * dz).toDouble()).toInt()
+
+            // 向方块方向移动（保持安全距离 2 格）
+            val moveSteps = (dist - 2).coerceAtLeast(1)
+            executeCarpetCommand("look at $x $y $z")
+            executeCarpetCommand("move forward")
+            kotlinx.coroutines.delay((moveSteps * 250L).coerceAtMost(3000L))
+            executeCarpetCommand("stop")
+
+            // 重新检查距离
+            val newDist = bot.eyePosition.distanceTo(blockCenter)
+            if (newDist > 5.0) {
+                return "挖掘失败：无法靠近方块（当前距离 ${"%.1f".format(newDist)} 格）"
+            }
         }
 
         // 看向方块
         executeCarpetCommand("look at $x $y $z")
 
-        // 开始挖掘（continuous attack）
+        // 开始挖掘
         executeCarpetCommand("attack continuous")
 
         // 等待方块被破坏
