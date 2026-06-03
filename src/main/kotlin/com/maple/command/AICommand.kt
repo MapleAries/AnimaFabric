@@ -189,7 +189,7 @@ object AICommand {
         try {
             FakePlayerManager.spawn(source.server, name, pos.x, pos.y, pos.z, player.yRot, player.xRot)
             source.sendSuccess({
-                Component.literal("已生成假人 '[AI] $name' 在 (${pos.x.toInt()}, ${pos.y.toInt()}, ${pos.z.toInt()})")
+                Component.literal("已生成假人 '[AI]$name' 在 (${pos.x.toInt()}, ${pos.y.toInt()}, ${pos.z.toInt()})")
             }, true)
         } catch (e: Exception) {
             source.sendFailure(Component.literal("生成假人失败: ${e.message}"))
