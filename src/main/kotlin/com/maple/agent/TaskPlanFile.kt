@@ -145,9 +145,20 @@ object TaskPlanManager {
      * 从 TaskPlanner 的步骤创建 TaskPlan。
      */
     fun createPlan(task: String, steps: List<TaskStep>): TaskPlan {
+        // 去重：移除连续重复的命令
+        val deduplicated = mutableListOf<TaskStep>()
+        for (step in steps) {
+            if (deduplicated.isEmpty() || deduplicated.last().command != step.command) {
+                deduplicated.add(step)
+            }
+        }
+
+        // 限制最多 8 步
+        val limited = deduplicated.take(8)
+
         return TaskPlan(
             task = task,
-            steps = steps.mapIndexed { index, step ->
+            steps = limited.mapIndexed { index, step ->
                 PlanStep(
                     id = index + 1,
                     description = step.description,

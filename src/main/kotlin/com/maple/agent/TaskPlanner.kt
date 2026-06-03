@@ -223,20 +223,27 @@ class TaskPlanner(
 !mineBlock(x,y,z) !placeBlock(x,y,z,block) !craft(item)
 !scanArea(r) !getInventory() !attack() !use() !msg(text)
 
+重要规则：
+1. 每个命令只出现一次，不要重复
+2. 如果需要放置方块但背包为空，先用 !craft 获取方块
+3. 坐标必须来自世界状态
+4. 最多 6 个步骤
+
 示例：
 任务：挖木头做木镐
-输出：
 !scanArea(10)
 !mineBlock(10,65,-5)
-!mineBlock(10,64,-5)
 !craft(planks)
 !craft(crafting_table)
 !craft(wooden_pickaxe)
 
 任务：蹲下然后站起来
-输出：
 !sneak()
 !sneak()
+
+任务：在我脚下放一个石头
+!craft(cobblestone)
+!placeBlock(当前X, 当前Y-1, 当前Z, cobblestone)
 
 当前世界状态：
 $worldState
