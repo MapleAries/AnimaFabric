@@ -264,12 +264,73 @@ object AStarPathfinder {
     }
 
     private fun reconstructPath(node: PathNode): List<BlockPos> {
-        val path = mutableListOf<BlockPos>()
+        val rawPath = mutableListOf<BlockPos>()
         var current: PathNode? = node
         while (current != null) {
-            path.add(0, current.pos)
+            rawPath.add(0, current.pos)
             current = current.parent
         }
-        return path
+        return simplifyPath(rawPath)
+    }
+
+    /**
+     * 路径简化：移除同一直线上的中间点。
+     * 例如 (0,64,0) → (1,64,0) → (2,64,0) → (3,64,0) 简化为 (0,64,0) → (3,64,0)
+     */
+    private fun simplifyPath(path: List<BlockPos>): List<BlockPos> {
+        if (path.size <= 2) return path
+
+        val simplified = mutableListOf(path[0])
+        var i = 0
+
+        while (i < path.size - 1) {
+            val current = path[i]
+            // 找到方向变化的最远点
+            var j = i + 1
+            while (j < path.size) {
+                val next = path[j]
+                val dx = next.x - current.x
+                val dy = next.y - current.y
+                val dz = next.z - current.z
+
+                // 检查是否在同一方向上
+                val dxStep = if (dx == 0) 0 else dx / Math.abs(dx)
+                val dyStep = if (dy == 0) 0 else dy / Math.abs(dy)
+                val dzStep = if (dz == 0) 0 else dz / Math.abs(dz)
+
+                // 检查中间点是否都在同一方向上
+                var sameDirection = true
+                for (k in i + 1 until j) {
+                    val mid = path[k]
+                    val midDx = mid.x - current.x
+                    val midDy = mid.y - current.y
+                    val midDz = mid.z - current.z
+                    val expectedX = current.x + dxStep * (k - i)
+                    val expectedY = current.y + dyStep * (k - i)
+                    val expectedZ = current.z + dzStep * (k - i)
+                    if (mid.x != expectedX || mid.y != expectedY || mid.z != expectedZ) {
+                        sameDirection = false
+                        break
+                    }
+                }
+
+                if (!sameDirection) break
+                j++
+            }
+            // 添加方向变化点
+            if (j - 1 > i) {
+                simplified.add(path[j - 1])
+            } else {
+                simplified.add(path[i + 1])
+            }
+            i = j - 1
+        }
+
+        // 确保终点在路径中
+        if (simplified.last() != path.last()) {
+            simplified.add(path.last())
+        }
+
+        return simplified
     }
 }
