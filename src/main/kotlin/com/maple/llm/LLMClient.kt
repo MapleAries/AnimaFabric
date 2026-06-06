@@ -122,12 +122,12 @@ class LLMClient(private val config: AnimaFabricConfig) {
     private fun processResponse(thinking: String, content: String): String {
         // 如果有实际内容，先尝试从中提取
         if (content.isNotBlank()) {
-            // 尝试提取 JSON
-            val jsonResult = extractJson(content)
-            if (jsonResult.isNotBlank()) return jsonResult
             // 尝试提取命令
             val cmdResult = extractCommands(content)
             if (cmdResult.isNotBlank()) return cmdResult
+            // 尝试提取 JSON
+            val jsonResult = extractJson(content)
+            if (jsonResult.isNotBlank()) return jsonResult
             // 直接返回原始内容
             return content
         }

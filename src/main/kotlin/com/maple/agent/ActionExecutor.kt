@@ -4,7 +4,7 @@ import com.maple.entity.FakePlayerManager
 import com.maple.pathfinding.AStarPathfinder
 import com.maple.pathfinding.MovementType
 import net.minecraft.core.BlockPos
-import net.minecraft.world.item.Item
+import net.minecraft.core.registries.BuiltInRegistries
 
 /**
  * 工具执行器 - 通过 Carpet /player 命令控制 bot。
@@ -566,7 +566,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         return GameThreadDispatcher.runOnGameThread(server) {
             val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread false
             val stack = bot.mainHandItem
-            !stack.isEmpty && Item.getId(stack.item).toString().equals(itemId, ignoreCase = true)
+            !stack.isEmpty && BuiltInRegistries.ITEM.getKey(stack.item).toString().equals(itemId, ignoreCase = true)
         }
     }
 
