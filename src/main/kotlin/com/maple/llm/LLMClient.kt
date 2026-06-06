@@ -41,7 +41,8 @@ class LLMClient(private val config: AnimaFabricConfig) {
     suspend fun chatStream(
         messages: List<ChatMessage>,
         onThinking: (String) -> Unit = {},
-        onContent: (String) -> Unit = {}
+        onContent: (String) -> Unit = {},
+        extractActions: Boolean = true
     ): LLMResponse = withContext(Dispatchers.IO) {
         val maxAttempts = 2
         for (attempt in 1..maxAttempts) {
@@ -103,10 +104,15 @@ class LLMClient(private val config: AnimaFabricConfig) {
 
                 logger.info("[AnimaFabric] LLM 响应完成 - 思考: {}字, 内容: {}字", thinkingBuilder.length, contentBuilder.length)
 
-                // 处理响应内容
-                val finalContent = processResponse(thinkingBuilder.toString(), contentBuilder.toString())
+                val rawThinking = thinkingBuilder.toString()
+                val rawContent = contentBuilder.toString()
+                val finalContent = if (extractActions) {
+                    processResponse(rawThinking, rawContent)
+                } else {
+                    rawContent.ifBlank { rawThinking }
+                }
 
-                return@withContext LLMResponse(thinkingBuilder.toString(), finalContent)
+                return@withContext LLMResponse(rawThinking, finalContent)
             } catch (e: java.net.SocketTimeoutException) {
                 logger.error("[AnimaFabric] LLM 请求超时（{}秒），请检查网络或增大 timeout 配置", config.timeout)
                 return@withContext LLMResponse("", "")

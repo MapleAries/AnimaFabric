@@ -2,6 +2,7 @@ package com.maple.agent
 
 import com.maple.config.AnimaFabricConfig
 import com.maple.entity.FakePlayerManager
+import com.maple.llm.ChatMessage
 import com.maple.llm.LLMClient
 import kotlinx.coroutines.*
 import net.minecraft.server.MinecraftServer
@@ -23,6 +24,10 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
     private val memories = ConcurrentHashMap<String, ConversationMemory>()
     private val scopes = ConcurrentHashMap<String, CoroutineScope>()
     private val jobs = ConcurrentHashMap<String, Job>()
+    private val chatJobs = ConcurrentHashMap<String, Job>()
+
+    @Volatile
+    private var lastActiveBotName: String? = null
 
     /**
      * 获取所有可用的假人名称。
@@ -46,32 +51,77 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
         }
 
         val botName = bot.name.string
-
-        if (!scopes.containsKey(botName)) {
-            scopes[botName] = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        }
-        if (!memories.containsKey(botName)) {
-            memories[botName] = ConversationMemory(config.maxHistoryTurns, llmClient)
-        }
-
-        val scope = scopes[botName]!!
+        lastActiveBotName = botName
+        val scope = scopeFor(botName)
+        val memory = memoryFor(botName)
         jobs[botName]?.cancel()
 
         jobs[botName] = scope.launch {
             try {
+                memory.addUserMessage(command)
                 println("[AnimaFabric] 指令交给 TaskPlanner 处理: $command (发送者: ${sender?.name?.string ?: "控制台"})")
                 val actionExecutor = ActionExecutor(botName, server)
                 val taskPlanner = TaskPlanner(botName, server, llmClient, actionExecutor, sender)
                 val result = withTimeout(config.timeout * 2000) {
                     taskPlanner.processTask(command)
                 }
+                memory.addAssistantMessage(result)
                 onComplete(result)
             } catch (e: TimeoutCancellationException) {
-                onComplete("指令执行超时")
+                val result = "指令执行超时"
+                memory.addAssistantMessage(result)
+                onComplete(result)
             } catch (e: CancellationException) {
-                onComplete("指令已取消")
+                val result = "指令已取消"
+                memory.addAssistantMessage(result)
+                onComplete(result)
             } catch (e: Exception) {
-                onComplete("执行出错：${e.message}")
+                val result = "执行出错：${e.message}"
+                memory.addAssistantMessage(result)
+                onComplete(result)
+            }
+        }
+    }
+
+    /**
+     * 和最近活跃的假人共享记忆进行自然语言聊天。
+     */
+    fun chat(message: String, onComplete: (String) -> Unit) {
+        val botName = resolveChatBotName()
+        if (botName == null) {
+            onComplete("没有可用的对话上下文。请先向一个假人发送任务，或确保当前只有一个假人。")
+            return
+        }
+
+        lastActiveBotName = botName
+        val scope = scopeFor(botName)
+        val memory = memoryFor(botName)
+        chatJobs[botName]?.cancel()
+
+        chatJobs[botName] = scope.launch {
+            try {
+                memory.addUserMessage(message)
+                val messages = mutableListOf(
+                    ChatMessage(
+                        "system",
+                        """
+                        你是 Minecraft 里的 AI 假人 $botName。
+                        直接回答玩家的问题，可以参考之前任务和对话记忆。
+                        不要调用工具，不要输出 JSON，不要输出 !tool(...) 形式的动作命令。
+                        如果记忆里没有答案，就直接说不知道。
+                        """.trimIndent()
+                    )
+                )
+                messages.addAll(memory.getMessages())
+
+                val response = llmClient.chatStream(messages, extractActions = false)
+                val reply = response.content.trim().ifBlank { "我暂时没有想好怎么回答。" }
+                memory.addAssistantMessage(reply)
+                onComplete(reply)
+            } catch (e: CancellationException) {
+                onComplete("对话已取消")
+            } catch (e: Exception) {
+                onComplete("对话出错：${e.message}")
             }
         }
     }
@@ -87,11 +137,10 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
         }
 
         val botName = bot.name.string
-        if (!scopes.containsKey(botName)) {
-            scopes[botName] = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        }
+        lastActiveBotName = botName
+        val scope = scopeFor(botName)
+        val memory = memoryFor(botName)
 
-        val scope = scopes[botName]!!
         jobs[botName]?.cancel()
 
         jobs[botName] = scope.launch {
@@ -103,13 +152,20 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
                 val result = withTimeout(currentConfig.timeout * 2000) {
                     taskPlanner.resumePlan(planPath)
                 }
+                memory.addAssistantMessage(result)
                 onComplete(result)
             } catch (e: TimeoutCancellationException) {
-                onComplete("计划恢复执行超时")
+                val result = "计划恢复执行超时"
+                memory.addAssistantMessage(result)
+                onComplete(result)
             } catch (e: CancellationException) {
-                onComplete("计划恢复已取消")
+                val result = "计划恢复已取消"
+                memory.addAssistantMessage(result)
+                onComplete(result)
             } catch (e: Exception) {
-                onComplete("计划恢复出错：${e.message}")
+                val result = "计划恢复出错：${e.message}"
+                memory.addAssistantMessage(result)
+                onComplete(result)
             }
         }
     }
@@ -131,6 +187,8 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
 
         jobs[botName]?.cancel()
         jobs.remove(botName)
+        chatJobs[botName]?.cancel()
+        chatJobs.remove(botName)
 
         try {
             server.commands.performPrefixedCommand(
@@ -158,6 +216,9 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
         scopes[botName]?.cancel()
         scopes.remove(botName)
         memories.remove(botName)
+        if (lastActiveBotName == botName) {
+            lastActiveBotName = null
+        }
         FakePlayerManager.kill(server, name)
     }
 
@@ -169,6 +230,8 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
         FakePlayerManager.killAll(server)
         scopes.clear()
         memories.clear()
+        chatJobs.clear()
+        lastActiveBotName = null
     }
 
     /**
@@ -185,5 +248,26 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
     fun clearMemory(name: String) {
         val bot = FakePlayerManager.getBot(server, name) ?: return
         memories[bot.name.string]?.clear()
+    }
+
+    private fun scopeFor(botName: String): CoroutineScope {
+        return scopes.computeIfAbsent(botName) {
+            CoroutineScope(Dispatchers.Default + SupervisorJob())
+        }
+    }
+
+    private fun memoryFor(botName: String): ConversationMemory {
+        return memories.computeIfAbsent(botName) {
+            ConversationMemory(config.maxHistoryTurns, llmClient)
+        }
+    }
+
+    private fun resolveChatBotName(): String? {
+        val bots = getAvailableBots()
+        val last = lastActiveBotName
+        if (last != null && bots.contains(last)) {
+            return last
+        }
+        return bots.singleOrNull()
     }
 }

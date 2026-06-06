@@ -68,6 +68,15 @@ All commands go through LLM for intelligent planning:
 /ai Steve find diamonds
 ```
 
+### Chat With the AI
+
+Use `/ai chat` for direct conversation with the model. It reads the most recently active bot's memory, so you can ask follow-up questions about previous tasks.
+
+```
+/ai Steve place a crafting table in front of you
+/ai chat Where did you place the crafting table?
+```
+
 ### Pronoun Support
 
 - "我" (I/me) = the player who sent the command

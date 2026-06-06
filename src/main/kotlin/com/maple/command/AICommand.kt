@@ -45,6 +45,11 @@ object AICommand {
                     .then(Commands.literal("list")
                         .executes { listBots(it) }
                     )
+                    .then(Commands.literal("chat")
+                        .then(Commands.argument("message", StringArgumentType.greedyString())
+                            .executes { chat(it) }
+                        )
+                    )
                     .then(Commands.literal("killall")
                         .executes { killAllBots(it) }
                     )
@@ -116,6 +121,28 @@ object AICommand {
             context.source.server.execute {
                 context.source.sendSuccess({
                     Component.literal("[$name] $result")
+                }, false)
+            }
+        }
+
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun chat(context: CommandContext<CommandSourceStack>): Int {
+        val message = StringArgumentType.getString(context, "message")
+        val ctrl = controller ?: run {
+            context.source.sendFailure(Component.literal("AgentController 未初始化"))
+            return 0
+        }
+
+        context.source.sendSuccess({
+            Component.literal("[AI] 正在思考...")
+        }, false)
+
+        ctrl.chat(message) { result ->
+            context.source.server.execute {
+                context.source.sendSuccess({
+                    Component.literal("[AI] $result")
                 }, false)
             }
         }
