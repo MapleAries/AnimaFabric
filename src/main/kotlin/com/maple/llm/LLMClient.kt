@@ -2,6 +2,7 @@ package com.maple.llm
 
 import com.maple.config.AnimaFabricConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
@@ -10,6 +11,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import javax.net.ssl.SSLHandshakeException
 
 /**
  * LLM 响应结果，包含思考内容和实际输出。
@@ -41,75 +43,87 @@ class LLMClient(private val config: AnimaFabricConfig) {
         onThinking: (String) -> Unit = {},
         onContent: (String) -> Unit = {}
     ): LLMResponse = withContext(Dispatchers.IO) {
-        try {
-            val request = ChatRequest(
-                model = config.model,
-                messages = messages,
-                maxTokens = config.maxTokens,
-                stream = true
-            )
+        val maxAttempts = 2
+        for (attempt in 1..maxAttempts) {
+            try {
+                val request = ChatRequest(
+                    model = config.model,
+                    messages = messages,
+                    maxTokens = config.maxTokens,
+                    stream = true
+                )
 
-            val requestBody = json.encodeToString(request)
-            logger.info("[AnimaFabric] 发送 LLM 请求: URL={}, Model={}", config.apiUrl, config.model)
+                val requestBody = json.encodeToString(request)
+                logger.info("[AnimaFabric] 发送 LLM 请求: URL={}, Model={} (attempt {}/{})", config.apiUrl, config.model, attempt, maxAttempts)
 
-            val httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(config.apiUrl))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer ${config.apiKey}")
-                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                .timeout(Duration.ofSeconds(config.timeout * 2))
-                .build()
+                val httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(config.apiUrl))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer ${config.apiKey}")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .timeout(Duration.ofSeconds(config.timeout * 2))
+                    .build()
 
-            val response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofLines())
+                val response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofLines())
 
-            logger.info("[AnimaFabric] LLM 响应状态码: {}", response.statusCode())
+                logger.info("[AnimaFabric] LLM 响应状态码: {}", response.statusCode())
 
-            if (response.statusCode() != 200) {
-                val errorBody = response.body().collect(java.util.stream.Collectors.joining("\n"))
-                logger.error("[AnimaFabric] LLM 请求失败: 状态码={}, 响应={}", response.statusCode(), errorBody)
-                return@withContext LLMResponse("", "")
-            }
+                if (response.statusCode() != 200) {
+                    val errorBody = response.body().collect(java.util.stream.Collectors.joining("\n"))
+                    logger.error("[AnimaFabric] LLM 请求失败: 状态码={}, 响应={}", response.statusCode(), errorBody)
+                    return@withContext LLMResponse("", "")
+                }
 
-            val thinkingBuilder = StringBuilder()
-            val contentBuilder = StringBuilder()
+                val thinkingBuilder = StringBuilder()
+                val contentBuilder = StringBuilder()
 
-            response.body().forEach { line ->
-                if (line.startsWith("data: ")) {
-                    val data = line.removePrefix("data: ").trim()
-                    if (data == "[DONE]") return@forEach
-                    try {
-                        val chunk = json.decodeFromString<StreamChunk>(data)
-                        val delta = chunk.choices.firstOrNull()?.delta
-                        if (delta != null) {
-                            // 分别收集思考内容和实际输出
-                            if (delta.reasoningContent != null && delta.reasoningContent.isNotEmpty()) {
-                                thinkingBuilder.append(delta.reasoningContent)
-                                onThinking(delta.reasoningContent)
+                response.body().forEach { line ->
+                    if (line.startsWith("data: ")) {
+                        val data = line.removePrefix("data: ").trim()
+                        if (data == "[DONE]") return@forEach
+                        try {
+                            val chunk = json.decodeFromString<StreamChunk>(data)
+                            val delta = chunk.choices.firstOrNull()?.delta
+                            if (delta != null) {
+                                // 分别收集思考内容和实际输出
+                                if (delta.reasoningContent != null && delta.reasoningContent.isNotEmpty()) {
+                                    thinkingBuilder.append(delta.reasoningContent)
+                                    onThinking(delta.reasoningContent)
+                                }
+                                if (delta.content != null && delta.content.isNotEmpty()) {
+                                    contentBuilder.append(delta.content)
+                                    onContent(delta.content)
+                                }
                             }
-                            if (delta.content != null && delta.content.isNotEmpty()) {
-                                contentBuilder.append(delta.content)
-                                onContent(delta.content)
-                            }
+                        } catch (e: Exception) {
+                            // 忽略解析错误
                         }
-                    } catch (e: Exception) {
-                        // 忽略解析错误
                     }
                 }
+
+                logger.info("[AnimaFabric] LLM 响应完成 - 思考: {}字, 内容: {}字", thinkingBuilder.length, contentBuilder.length)
+
+                // 处理响应内容
+                val finalContent = processResponse(thinkingBuilder.toString(), contentBuilder.toString())
+
+                return@withContext LLMResponse(thinkingBuilder.toString(), finalContent)
+            } catch (e: java.net.SocketTimeoutException) {
+                logger.error("[AnimaFabric] LLM 请求超时（{}秒），请检查网络或增大 timeout 配置", config.timeout)
+                return@withContext LLMResponse("", "")
+            } catch (e: SSLHandshakeException) {
+                if (attempt < maxAttempts) {
+                    logger.warn("[AnimaFabric] LLM TLS 握手中断，将重试: {}", e.message)
+                    delay(500L * attempt)
+                } else {
+                    logger.warn("[AnimaFabric] LLM TLS 握手连续失败: {}", e.message)
+                    return@withContext LLMResponse("", "")
+                }
+            } catch (e: Exception) {
+                logger.error("[AnimaFabric] LLM 请求异常: {}", e.message, e)
+                return@withContext LLMResponse("", "")
             }
-
-            logger.info("[AnimaFabric] LLM 响应完成 - 思考: {}字, 内容: {}字", thinkingBuilder.length, contentBuilder.length)
-
-            // 处理响应内容
-            val finalContent = processResponse(thinkingBuilder.toString(), contentBuilder.toString())
-
-            LLMResponse(thinkingBuilder.toString(), finalContent)
-        } catch (e: java.net.SocketTimeoutException) {
-            logger.error("[AnimaFabric] LLM 请求超时（{}秒），请检查网络或增大 timeout 配置", config.timeout)
-            LLMResponse("", "")
-        } catch (e: Exception) {
-            logger.error("[AnimaFabric] LLM 请求异常: {}", e.message, e)
-            LLMResponse("", "")
         }
+        LLMResponse("", "")
     }
 
     /**
