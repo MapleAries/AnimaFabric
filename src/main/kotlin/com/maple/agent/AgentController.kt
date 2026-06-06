@@ -263,8 +263,14 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
     }
 
     private fun resolveChatBotName(): String? {
-        val bots = getAvailableBots()
         val last = lastActiveBotName
+        if (last != null && memories.containsKey(last)) {
+            return last
+        }
+
+        memories.keys.singleOrNull()?.let { return it }
+
+        val bots = getAvailableBots()
         if (last != null && bots.contains(last)) {
             return last
         }
