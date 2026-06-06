@@ -97,7 +97,7 @@ class CalculationContext(
 
     companion object {
         private fun posHash(pos: BlockPos): Long {
-            return (pos.x.toLong() shl 32) or (pos.z.toLong() and 0xFFFFFFFFL) or (pos.y.toLong() shl 16)
+            return pos.asLong()
         }
     }
 }

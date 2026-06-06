@@ -41,11 +41,13 @@ class PipelineExecutor(
 
         for (attempt in 0..maxRetries) {
             // 1. 世界感知（每次重试都刷新）
-            val bot = server.playerList.getPlayerByName(botName)
-            val worldState = if (bot != null) {
-                WorldPerception.scan(bot)
-            } else {
-                "Bot not online"
+            val worldState = GameThreadDispatcher.runOnGameThread(server) {
+                val bot = server.playerList.getPlayerByName(botName)
+                if (bot != null) {
+                    WorldPerception.scan(bot)
+                } else {
+                    "Bot not online"
+                }
             }
 
             // 2. 构建 LLM 请求（带执行历史和错误反馈）
@@ -185,21 +187,23 @@ class PipelineExecutor(
     /**
      * 发送聊天消息，自动分割长消息。
      */
-    private fun sendChatMessage(message: String) {
+    private suspend fun sendChatMessage(message: String) {
         val maxLength = 100
 
-        if (message.length <= maxLength) {
-            server.playerList.broadcastSystemMessage(
-                net.minecraft.network.chat.Component.literal("[$botName] $message"),
-                false
-            )
-        } else {
-            val lines = message.chunked(maxLength)
-            for (line in lines) {
+        GameThreadDispatcher.runOnGameThread(server) {
+            if (message.length <= maxLength) {
                 server.playerList.broadcastSystemMessage(
-                    net.minecraft.network.chat.Component.literal("[$botName] $line"),
+                    net.minecraft.network.chat.Component.literal("[$botName] $message"),
                     false
                 )
+            } else {
+                val lines = message.chunked(maxLength)
+                for (line in lines) {
+                    server.playerList.broadcastSystemMessage(
+                        net.minecraft.network.chat.Component.literal("[$botName] $line"),
+                        false
+                    )
+                }
             }
         }
     }

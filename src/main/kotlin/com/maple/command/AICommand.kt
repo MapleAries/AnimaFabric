@@ -51,8 +51,10 @@ object AICommand {
                     .then(Commands.literal("plan")
                         .executes { listPlans(it) }
                         .then(Commands.literal("resume")
-                            .then(Commands.argument("file", StringArgumentType.greedyString())
-                                .executes { resumePlan(it) }
+                            .then(Commands.argument("name", StringArgumentType.word())
+                                .then(Commands.argument("file", StringArgumentType.greedyString())
+                                    .executes { resumePlan(it) }
+                                )
                             )
                         )
                     )
@@ -205,15 +207,22 @@ object AICommand {
         }
 
         context.source.sendSuccess({
-            Component.literal("使用 /ai plan resume <文件名> 恢复执行")
+            Component.literal("使用 /ai plan resume <假人名> <文件名> 恢复执行")
         }, false)
 
         return Command.SINGLE_SUCCESS
     }
 
     private fun resumePlan(context: CommandContext<CommandSourceStack>): Int {
+        val name = StringArgumentType.getString(context, "name")
         val fileName = StringArgumentType.getString(context, "file")
-        val planPath = com.maple.agent.TaskPlanManager.getPlanDir().resolve(fileName)
+        val planDir = com.maple.agent.TaskPlanManager.getPlanDir()
+        val planPath = planDir.resolve(fileName).normalize()
+
+        if (!planPath.startsWith(planDir)) {
+            context.source.sendFailure(Component.literal("计划文件路径无效: $fileName"))
+            return 0
+        }
 
         if (!java.nio.file.Files.exists(planPath)) {
             context.source.sendFailure(Component.literal("计划文件不存在: $fileName"))
@@ -226,14 +235,13 @@ object AICommand {
         }
 
         context.source.sendSuccess({
-            Component.literal("正在恢复计划: $fileName")
+            Component.literal("[$name] 正在恢复计划: $fileName")
         }, false)
 
-        val botName = "plan-resume"
-        ctrl.sendCommand(botName, "resume:$planPath") { result ->
+        ctrl.resumePlan(name, planPath) { result ->
             context.source.server.execute {
                 context.source.sendSuccess({
-                    Component.literal("[计划] $result")
+                    Component.literal("[$name] $result")
                 }, false)
             }
         }
@@ -298,5 +306,6 @@ object AICommand {
 
     private fun updateConfig(newConfig: AnimaFabricConfig) {
         config = newConfig
+        controller?.updateConfig(newConfig)
     }
 }

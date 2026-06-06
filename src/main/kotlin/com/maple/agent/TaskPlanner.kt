@@ -210,6 +210,7 @@ class TaskPlanner(
                result.startsWith("未知工具") ||
                result.startsWith("无效方向") ||
                result.startsWith("合成失败") ||
+               result.startsWith("给予物品失败") ||
                result.startsWith("无法")
     }
 
@@ -217,46 +218,50 @@ class TaskPlanner(
      * 构建代词上下文。
      * 根据指令中的代词（我/你）确定坐标来源。
      */
-    private fun buildPronounContext(command: String): String {
+    private suspend fun buildPronounContext(command: String): String {
         val hasWo = command.contains("我")    // 我 = 指令发送者
         val hasNi = command.contains("你")    // 你 = 假人
 
-        val bot = server.playerList.getPlayerByName(botName)
-        val botPos = bot?.blockPosition()
-        val senderPos = commandSender?.blockPosition()
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName)
+            val botPos = bot?.blockPosition()
+            val senderPos = commandSender?.blockPosition()
 
-        val sb = StringBuilder()
+            val sb = StringBuilder()
 
-        if (hasNi && bot != null) {
-            val botTarget = WorldPerception.getCrosshairTargetString(bot)
-            sb.appendLine("## \"你\" = 假人 $botName")
-            sb.appendLine("- 假人位置：(${botPos!!.x}, ${botPos.y}, ${botPos.z})")
-            sb.appendLine("- 假人准星目标：$botTarget")
-            sb.appendLine("- \"你面前的方块\" = 假人准星目标坐标")
-            sb.appendLine("- \"你脚下\" = 假人位置 Y-1")
-            sb.appendLine()
+            if (hasNi && bot != null && botPos != null) {
+                val botTarget = WorldPerception.getCrosshairTargetString(bot)
+                sb.appendLine("## \"你\" = 假人 $botName")
+                sb.appendLine("- 假人位置：(${botPos.x}, ${botPos.y}, ${botPos.z})")
+                sb.appendLine("- 假人准星目标：$botTarget")
+                sb.appendLine("- \"你面前的方块\" = 假人准星目标坐标")
+                sb.appendLine("- \"你脚下\" = 假人位置 Y-1")
+                sb.appendLine()
+            }
+
+            if (hasWo && commandSender != null && senderPos != null) {
+                val senderTarget = WorldPerception.getCrosshairTargetString(commandSender)
+                sb.appendLine("## \"我\" = 指令发送者 ${commandSender.name.string}")
+                sb.appendLine("- 发送者位置：(${senderPos.x}, ${senderPos.y}, ${senderPos.z})")
+                sb.appendLine("- 发送者准星目标：$senderTarget")
+                sb.appendLine("- \"我面前的方块\" = 发送者准星目标坐标")
+                sb.appendLine("- \"我脚下\" = 发送者位置 Y-1")
+                sb.appendLine("- \"到我这里来\" = 移动到发送者位置")
+                sb.appendLine()
+            }
+
+            sb.toString().trimEnd()
         }
-
-        if (hasWo && commandSender != null) {
-            val senderTarget = WorldPerception.getCrosshairTargetString(commandSender!!)
-            sb.appendLine("## \"我\" = 指令发送者 ${commandSender!!.name.string}")
-            sb.appendLine("- 发送者位置：(${senderPos!!.x}, ${senderPos.y}, ${senderPos.z})")
-            sb.appendLine("- 发送者准星目标：$senderTarget")
-            sb.appendLine("- \"我面前的方块\" = 发送者准星目标坐标")
-            sb.appendLine("- \"我脚下\" = 发送者位置 Y-1")
-            sb.appendLine("- \"到我这里来\" = 移动到发送者位置")
-            sb.appendLine()
-        }
-
-        return sb.toString().trimEnd()
     }
 
     /**
      * 分解任务为步骤序列。
      */
     private suspend fun decomposeTask(command: String): List<TaskStep> {
-        val bot = server.playerList.getPlayerByName(botName)
-        val worldState = if (bot != null) WorldPerception.scan(bot, commandSender) else "Bot not online"
+        val worldState = GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName)
+            if (bot != null) WorldPerception.scan(bot, commandSender) else "Bot not online"
+        }
 
         // 构建代词上下文
         val pronounContext = buildPronounContext(command)
@@ -266,7 +271,7 @@ class TaskPlanner(
 可用命令：
 !moveTo(x,y,z) !move(dir,n) !turn(dir) !jump() !sneak()
 !mineBlock(x,y,z) !placeBlock(x,y,z,block) !craft(item)
-!scanArea(r) !getInventory() !attack() !use() !msg(text)
+!scanArea(r) !getInventory() !attack() !use() !sendMessage(text)
 
 重要规则：
 1. 每个命令只出现一次，不要重复
@@ -300,8 +305,10 @@ $worldState
      * 重新规划剩余步骤。
      */
     private suspend fun replanRemaining(originalTask: String, completedResults: List<String>): List<TaskStep> {
-        val bot = server.playerList.getPlayerByName(botName)
-        val worldState = if (bot != null) WorldPerception.scan(bot, commandSender) else "Bot not online"
+        val worldState = GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName)
+            if (bot != null) WorldPerception.scan(bot, commandSender) else "Bot not online"
+        }
 
         val completed = completedResults.joinToString("\n")
 
@@ -311,7 +318,7 @@ $worldState
 已完成：$completed
 当前状态：$worldState
 
-可用命令：!moveTo(x,y,z) !move(dir,n) !mineBlock(x,y,z) !craft(item) !scanArea(r) !getInventory() !use() !msg(text)
+可用命令：!moveTo(x,y,z) !move(dir,n) !mineBlock(x,y,z) !craft(item) !scanArea(r) !getInventory() !use() !sendMessage(text)
 """
 
         val messages = listOf(

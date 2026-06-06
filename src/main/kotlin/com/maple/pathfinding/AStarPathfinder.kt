@@ -257,10 +257,10 @@ object AStarPathfinder {
 
     /**
      * 将 BlockPos 编码为 long。
-     * 高 32 位 = x, 中 16 位 = y, 低 32 位 = z
+     * 使用 Minecraft 自带编码，避免自定义位段重叠导致路径节点碰撞。
      */
     fun posHash(pos: BlockPos): Long {
-        return (pos.x.toLong() shl 32) or (pos.z.toLong() and 0xFFFFFFFFL) or (pos.y.toLong() shl 16)
+        return pos.asLong()
     }
 
     private fun reconstructPath(node: PathNode): List<BlockPos> {

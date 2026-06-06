@@ -103,51 +103,53 @@ class PlanExecutor(
     /**
      * 检查条件是否满足。
      */
-    private fun checkCondition(condition: CheckCondition): Boolean {
-        val bot = FakePlayerManager.getBot(server, botName) ?: return false
+    private suspend fun checkCondition(condition: CheckCondition): Boolean {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread false
 
-        return when (condition.type) {
-            ConditionType.INVENTORY_CONTAINS -> {
-                val itemName = condition.item ?: return false
-                val requiredCount = condition.count ?: 1
-                val currentCount = countItemInInventory(bot as net.minecraft.server.level.ServerPlayer, itemName)
-                currentCount >= requiredCount
-            }
-            ConditionType.INVENTORY_FULL -> {
-                // 检查是否有空槽位
-                var emptySlots = 0
-                for (i in 0 until bot.inventory.containerSize) {
-                    if (bot.inventory.getItem(i).isEmpty) emptySlots++
+            when (condition.type) {
+                ConditionType.INVENTORY_CONTAINS -> {
+                    val itemName = condition.item ?: return@runOnGameThread false
+                    val requiredCount = condition.count ?: 1
+                    val currentCount = countItemInInventory(bot, itemName)
+                    currentCount >= requiredCount
                 }
-                emptySlots == 0
-            }
-            ConditionType.BLOCK_AT -> {
-                val pos = condition.pos ?: return false
-                val level = bot.level()
-                val blockState = level.getBlockState(net.minecraft.core.BlockPos(pos.x, pos.y, pos.z))
-                when (condition.blockState) {
-                    "air" -> blockState.isAir
-                    "solid" -> blockState.isSolidRender
-                    else -> blockState.block.name.string.equals(condition.blockState, ignoreCase = true)
+                ConditionType.INVENTORY_FULL -> {
+                    // 检查是否有空槽位
+                    var emptySlots = 0
+                    for (i in 0 until bot.inventory.containerSize) {
+                        if (bot.inventory.getItem(i).isEmpty) emptySlots++
+                    }
+                    emptySlots == 0
                 }
+                ConditionType.BLOCK_AT -> {
+                    val pos = condition.pos ?: return@runOnGameThread false
+                    val level = bot.level()
+                    val blockState = level.getBlockState(net.minecraft.core.BlockPos(pos.x, pos.y, pos.z))
+                    when (condition.blockState) {
+                        "air" -> blockState.isAir
+                        "solid" -> blockState.isSolidRender
+                        else -> blockState.block.name.string.equals(condition.blockState, ignoreCase = true)
+                    }
+                }
+                ConditionType.HEALTH_BELOW -> {
+                    val threshold = condition.health ?: return@runOnGameThread false
+                    bot.health < threshold
+                }
+                ConditionType.HEALTH_ABOVE -> {
+                    val threshold = condition.health ?: return@runOnGameThread false
+                    bot.health > threshold
+                }
+                ConditionType.ALWAYS -> true
+                ConditionType.NEVER -> false
             }
-            ConditionType.HEALTH_BELOW -> {
-                val threshold = condition.health ?: return false
-                bot.health < threshold
-            }
-            ConditionType.HEALTH_ABOVE -> {
-                val threshold = condition.health ?: return false
-                bot.health > threshold
-            }
-            ConditionType.ALWAYS -> true
-            ConditionType.NEVER -> false
         }
     }
 
     /**
      * 检查 LoopCondition（与 CheckCondition 结构相同，转换后复用逻辑）。
      */
-    private fun checkLoopCondition(condition: LoopCondition): Boolean {
+    private suspend fun checkLoopCondition(condition: LoopCondition): Boolean {
         return checkCondition(CheckCondition(
             type = condition.type,
             item = condition.item,

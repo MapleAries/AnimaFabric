@@ -134,7 +134,7 @@ object ToolRegistry {
         ),
         Tool(
             name = "craft",
-            description = "合成物品。自动使用背包中的材料合成。",
+            description = "调试模式给予物品。当前实现通过命令给予物品，并不消耗背包材料。",
             parameters = listOf(
                 ToolParameter("item", "string", "物品名称：planks/crafting_table/stick/wooden_pickaxe/wooden_axe/wooden_sword/stone_pickaxe/stone_axe/iron_pickaxe/iron_sword/furnace/torch/cobblestone 等")
             )

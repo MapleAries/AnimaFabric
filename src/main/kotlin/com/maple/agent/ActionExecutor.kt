@@ -54,6 +54,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             "getHunger" -> executeGetHunger()
             "scanArea" -> executeScanArea(params)
             "sendMessage" -> executeSendMessage(params)
+            "msg" -> executeSendMessage(params)
             "stop" -> executeStop()
             "sneak" -> executeSneak(params)
             "craft" -> executeCraft(params)
@@ -70,15 +71,17 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
     /**
      * 通过 Carpet 的 /player 命令执行操作。
      */
-    private fun executeCarpetCommand(command: String): Boolean {
-        return try {
-            val fullCommand = "/player $botName $command"
-            println("[AnimaFabric] 执行 carpet 命令: $fullCommand")
-            server.commands.performPrefixedCommand(server.createCommandSourceStack(), fullCommand)
-            true
-        } catch (e: Exception) {
-            println("[AnimaFabric] carpet 命令执行异常: ${e.message}")
-            false
+    private suspend fun executeCarpetCommand(command: String): Boolean {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            try {
+                val fullCommand = "/player $botName $command"
+                println("[AnimaFabric] 执行 carpet 命令: $fullCommand")
+                server.commands.performPrefixedCommand(server.createCommandSourceStack(), fullCommand)
+                true
+            } catch (e: Exception) {
+                println("[AnimaFabric] carpet 命令执行异常: ${e.message}")
+                false
+            }
         }
     }
 
@@ -102,12 +105,12 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val y = getIntParam(params, "y") ?: return "缺少参数 y"
         val z = getIntParam(params, "z") ?: return "缺少参数 z"
 
-        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
-        val startPos = bot.position()
-
-        // 使用 A* 寻路
-        val level = bot.level()
-        val path = com.maple.pathfinding.AStarPathfinder.findPath(level, bot.blockPosition(), BlockPos(x, y, z))
+        val (startPos, path) = GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
+            val level = bot.level()
+            val foundPath = com.maple.pathfinding.AStarPathfinder.findPath(level, bot.blockPosition(), BlockPos(x, y, z))
+            bot.position() to foundPath
+        } ?: return "Bot 不存在"
 
         if (path.isEmpty()) {
             // fallback 到直线移动
@@ -120,21 +123,34 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             kotlinx.coroutines.delay((distance * 250L).toLong().coerceIn(500, 10000))
             executeCarpetCommand("stop")
 
-            val endPos = bot.position()
+            val endPos = GameThreadDispatcher.runOnGameThread(server) {
+                server.playerList.getPlayerByName(botName)?.position()
+            } ?: return "Bot 不存在"
             val movedDistance = startPos.distanceTo(endPos)
             return "已移动到 ($x, $y, $z) 附近（移动了${"%.1f".format(movedDistance)}格，无路径）"
         }
 
         // 沿 A* 路径移动
         for (i in 1 until path.size) {
+            val previous = path[i - 1]
             val target = path[i]
+            if (previous.x == target.x && previous.z == target.z && previous.y != target.y) {
+                return "移动未完成：路径需要垂直挖掘或搭方块，当前执行器暂不支持 (${target.x}, ${target.y}, ${target.z})"
+            }
+            val segmentDistance = Math.sqrt(
+                ((target.x - previous.x) * (target.x - previous.x) +
+                 (target.y - previous.y) * (target.y - previous.y) +
+                 (target.z - previous.z) * (target.z - previous.z)).toDouble()
+            )
             executeCarpetCommand("look at ${target.x} ${target.y} ${target.z}")
             executeCarpetCommand("move forward")
-            kotlinx.coroutines.delay(300)
+            kotlinx.coroutines.delay((segmentDistance * 300L).toLong().coerceIn(300L, 3000L))
             executeCarpetCommand("stop")
         }
 
-        val endPos = bot.position()
+        val endPos = GameThreadDispatcher.runOnGameThread(server) {
+            server.playerList.getPlayerByName(botName)?.position()
+        } ?: return "Bot 不存在"
         val movedDistance = startPos.distanceTo(endPos)
         return "已移动到 ($x, $y, $z)（移动了${"%.1f".format(movedDistance)}格）"
     }
@@ -143,8 +159,9 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
         val distance = getIntParam(params, "ticks") ?: 5
 
-        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
-        val startPos = bot.position()
+        val startPos = GameThreadDispatcher.runOnGameThread(server) {
+            server.playerList.getPlayerByName(botName)?.position()
+        } ?: return "Bot 不存在"
 
         // Carpet move 命令：forward/backward/left/right
         val carpetDir = when (direction.lowercase()) {
@@ -159,14 +176,16 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         kotlinx.coroutines.delay((distance * 250L).coerceAtMost(5000L))
         executeCarpetCommand("stop")
 
-        val endPos = bot.position()
+        val endPos = GameThreadDispatcher.runOnGameThread(server) {
+            server.playerList.getPlayerByName(botName)?.position()
+        } ?: return "Bot 不存在"
         val movedDistance = startPos.distanceTo(endPos)
         return "已向 $direction 移动（约${"%.1f".format(movedDistance)}格）"
     }
 
     // ========== 视角 ==========
 
-    private fun executeLook(params: Map<String, Any>): String {
+    private suspend fun executeLook(params: Map<String, Any>): String {
         val yaw = (params["yaw"] as? Number)?.toFloat()
         val pitch = (params["pitch"] as? Number)?.toFloat()
 
@@ -186,7 +205,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         return "缺少参数"
     }
 
-    private fun executeTurn(params: Map<String, Any>): String {
+    private suspend fun executeTurn(params: Map<String, Any>): String {
         val direction = params["direction"] as? String ?: return "缺少参数 direction"
 
         // Carpet turn: back/left/right 或 <pitch> <yaw>
@@ -200,7 +219,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
 
     // ========== 动作 ==========
 
-    private fun executeJump(params: Map<String, Any>): String {
+    private suspend fun executeJump(params: Map<String, Any>): String {
         val mode = getStringParam(params, "mode")
         // Carpet jump: 无参数=once, continuous, interval <ticks>, once
         val cmd = when (mode?.lowercase()) {
@@ -263,14 +282,14 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         return "已使用物品"
     }
 
-    private fun executeStop(): String {
+    private suspend fun executeStop(): String {
         executeCarpetCommand("stop")
         return "已停止所有动作"
     }
 
     // ========== 潜行/冲刺 ==========
 
-    private fun executeSneak(params: Map<String, Any>): String {
+    private suspend fun executeSneak(params: Map<String, Any>): String {
         val duration = getIntParam(params, "duration")
         if (duration != null && duration > 0) {
             executeCarpetCommand("sneak")
@@ -281,7 +300,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         return "已潜行"
     }
 
-    private fun executeSprint(params: Map<String, Any>): String {
+    private suspend fun executeSprint(params: Map<String, Any>): String {
         val enable = params["enable"] as? Boolean ?: true
         if (enable) {
             executeCarpetCommand("sprint")
@@ -293,7 +312,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
 
     // ========== 物品 ==========
 
-    private fun executeDrop(params: Map<String, Any>): String {
+    private suspend fun executeDrop(params: Map<String, Any>): String {
         val slot = getStringParam(params, "slot") ?: "mainhand"
         val continuous = params["continuous"] as? Boolean ?: false
 
@@ -306,21 +325,21 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         return "已丢出物品"
     }
 
-    private fun executeHotbar(params: Map<String, Any>): String {
+    private suspend fun executeHotbar(params: Map<String, Any>): String {
         val slot = getIntParam(params, "slot") ?: return "缺少参数 slot"
         if (slot !in 1..9) return "槽位必须在 1-9 之间"
         executeCarpetCommand("hotbar $slot")
         return "已切换到快捷栏 $slot"
     }
 
-    private fun executeSwapHands(): String {
+    private suspend fun executeSwapHands(): String {
         executeCarpetCommand("swapHands")
         return "已交换主副手"
     }
 
     // ========== 骑乘 ==========
 
-    private fun executeMount(params: Map<String, Any>): String {
+    private suspend fun executeMount(params: Map<String, Any>): String {
         val anything = params["anything"] as? Boolean ?: false
         if (anything) {
             executeCarpetCommand("mount anything")
@@ -330,7 +349,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         return "已骑乘"
     }
 
-    private fun executeDismount(): String {
+    private suspend fun executeDismount(): String {
         executeCarpetCommand("dismount")
         return "已下马"
     }
@@ -343,16 +362,19 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val z = getIntParam(params, "z") ?: return "缺少参数 z"
 
         val targetPos = BlockPos(x, y, z)
-        val bot = server.playerList.getPlayerByName(botName) ?: return "Bot 不存在"
+        val blockCenter = net.minecraft.world.phys.Vec3.atCenterOf(targetPos)
 
         // 距离检查：超过 3 格先靠近
-        val eyePos = bot.eyePosition
-        val blockCenter = net.minecraft.world.phys.Vec3.atCenterOf(targetPos)
-        val distance = eyePos.distanceTo(blockCenter)
+        val distance = GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
+            bot.eyePosition.distanceTo(blockCenter)
+        } ?: return "Bot 不存在"
 
         if (distance > 3.0) {
             // 先移动到方块附近
-            val botPos = bot.blockPosition()
+            val botPos = GameThreadDispatcher.runOnGameThread(server) {
+                server.playerList.getPlayerByName(botName)?.blockPosition()
+            } ?: return "Bot 不存在"
             val dx = x - botPos.x
             val dz = z - botPos.z
             val dist = Math.sqrt((dx * dx + dz * dz).toDouble()).toInt()
@@ -365,7 +387,10 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             executeCarpetCommand("stop")
 
             // 重新检查距离
-            val newDist = bot.eyePosition.distanceTo(blockCenter)
+            val newDist = GameThreadDispatcher.runOnGameThread(server) {
+                val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
+                bot.eyePosition.distanceTo(blockCenter)
+            } ?: return "Bot 不存在"
             if (newDist > 5.0) {
                 return "挖掘失败：无法靠近方块（当前距离 ${"%.1f".format(newDist)} 格）"
             }
@@ -380,18 +405,24 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         // 等待方块被破坏
         var ticks = 0
         val maxTicks = 100
+        var isBroken = false
         while (ticks < maxTicks) {
-            val isBroken = bot.level().getBlockState(targetPos).isAir
+            isBroken = GameThreadDispatcher.runOnGameThread(server) {
+                server.playerList.getPlayerByName(botName)?.level()?.getBlockState(targetPos)?.isAir ?: false
+            }
             if (isBroken) break
             kotlinx.coroutines.delay(50)
             ticks++
         }
 
         executeCarpetCommand("stop")
+        if (!isBroken) {
+            return "挖掘失败：方块在 ${maxTicks} ticks 内未被破坏 ($x, $y, $z)"
+        }
         return "已挖掘 ($x, $y, $z)"
     }
 
-    private fun executePlaceBlock(params: Map<String, Any>): String {
+    private suspend fun executePlaceBlock(params: Map<String, Any>): String {
         val x = getIntParam(params, "x") ?: return "缺少参数 x"
         val y = getIntParam(params, "y") ?: return "缺少参数 y"
         val z = getIntParam(params, "z") ?: return "缺少参数 z"
@@ -408,69 +439,79 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
 
     // ========== 查询 ==========
 
-    private fun executeGetInventory(): String {
-        val bot = FakePlayerManager.getBot(server, botName) ?: return "Bot 不存在"
-        val items = mutableListOf<String>()
-        for (i in 0 until bot.inventory.containerSize) {
-            val stack = bot.inventory.getItem(i)
-            if (!stack.isEmpty) {
-                items.add("${stack.hoverName.string} x${stack.count}")
+    private suspend fun executeGetInventory(): String {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread "Bot 不存在"
+            val items = mutableListOf<String>()
+            for (i in 0 until bot.inventory.containerSize) {
+                val stack = bot.inventory.getItem(i)
+                if (!stack.isEmpty) {
+                    items.add("${stack.hoverName.string} x${stack.count}")
+                }
             }
+            if (items.isEmpty()) "背包为空" else items.joinToString("\n")
         }
-        return if (items.isEmpty()) "背包为空" else items.joinToString("\n")
     }
 
-    private fun executeGetHealth(): String {
-        val bot = FakePlayerManager.getBot(server, botName) ?: return "Bot 不存在"
-        return "血量：${bot.health.toInt()}/${bot.maxHealth.toInt()}"
+    private suspend fun executeGetHealth(): String {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread "Bot 不存在"
+            "血量：${bot.health.toInt()}/${bot.maxHealth.toInt()}"
+        }
     }
 
-    private fun executeGetHunger(): String {
-        val bot = FakePlayerManager.getBot(server, botName) ?: return "Bot 不存在"
-        return "饥饿值：${bot.foodData.foodLevel}/20"
+    private suspend fun executeGetHunger(): String {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread "Bot 不存在"
+            "饥饿值：${bot.foodData.foodLevel}/20"
+        }
     }
 
-    private fun executeScanArea(params: Map<String, Any>): String {
+    private suspend fun executeScanArea(params: Map<String, Any>): String {
         val radius = getIntParam(params, "radius") ?: 5
-        val bot = FakePlayerManager.getBot(server, botName) ?: return "Bot 不存在"
-        val pos = bot.blockPosition()
-        val level = bot.level()
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread "Bot 不存在"
+            val pos = bot.blockPosition()
+            val level = bot.level()
 
-        val blockCounts = mutableMapOf<String, Int>()
-        for (dx in -radius..radius) {
-            for (dy in -radius..radius) {
-                for (dz in -radius..radius) {
-                    val bp = pos.offset(dx, dy, dz)
-                    val state = level.getBlockState(bp)
-                    if (!state.isAir) {
-                        val name = state.block.name.string
-                        blockCounts[name] = (blockCounts[name] ?: 0) + 1
+            val blockCounts = mutableMapOf<String, Int>()
+            for (dx in -radius..radius) {
+                for (dy in -radius..radius) {
+                    for (dz in -radius..radius) {
+                        val bp = pos.offset(dx, dy, dz)
+                        val state = level.getBlockState(bp)
+                        if (!state.isAir) {
+                            val name = state.block.name.string
+                            blockCounts[name] = (blockCounts[name] ?: 0) + 1
+                        }
                     }
                 }
             }
-        }
 
-        return if (blockCounts.isEmpty()) {
-            "半径 ${radius} 格内没有方块"
-        } else {
-            blockCounts.entries
-                .sortedByDescending { it.value }
-                .take(10)
-                .joinToString("\n") { "${it.key} x${it.value}" }
+            if (blockCounts.isEmpty()) {
+                "半径 ${radius} 格内没有方块"
+            } else {
+                blockCounts.entries
+                    .sortedByDescending { it.value }
+                    .take(10)
+                    .joinToString("\n") { "${it.key} x${it.value}" }
+            }
         }
     }
 
     // ========== 通信 ==========
 
-    private fun executeSendMessage(params: Map<String, Any>): String {
-        val message = params["message"] as? String ?: return "缺少参数 message"
-        try {
-            server.commands.performPrefixedCommand(
-                server.createCommandSourceStack(),
-                "/say [$botName] $message"
-            )
-        } catch (e: Exception) {
-            println("[AnimaFabric] 发送消息失败: ${e.message}")
+    private suspend fun executeSendMessage(params: Map<String, Any>): String {
+        val message = getStringParam(params, "message") ?: getStringParam(params, "param0") ?: return "缺少参数 message"
+        GameThreadDispatcher.runOnGameThread(server) {
+            try {
+                server.commands.performPrefixedCommand(
+                    server.createCommandSourceStack(),
+                    "/say [$botName] $message"
+                )
+            } catch (e: Exception) {
+                println("[AnimaFabric] 发送消息失败: ${e.message}")
+            }
         }
         return "已发送消息"
     }
@@ -507,13 +548,15 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val itemId = itemMapping[item.lowercase()] ?: "minecraft:${item.lowercase()}"
 
         return try {
-            server.commands.performPrefixedCommand(
-                server.createCommandSourceStack(),
-                "give $botName $itemId 1"
-            )
-            "已合成 $item"
+            GameThreadDispatcher.runOnGameThread(server) {
+                server.commands.performPrefixedCommand(
+                    server.createCommandSourceStack(),
+                    "give $botName $itemId 1"
+                )
+            }
+            "已给予 $item"
         } catch (e: Exception) {
-            "合成失败: ${e.message}"
+            "给予物品失败: ${e.message}"
         }
     }
 }
