@@ -77,15 +77,17 @@ Use `/ai chat` for direct conversation with the model. It reads the most recentl
 /ai chat Where did you place the crafting table?
 ```
 
-### Pronoun Support
+### Pronoun Resolution
 
-- "我" (I/me) = the player who sent the command
-- "你" (you) = the bot
+- "我" (I/me) = the player who sent the command. Player position and crosshair target are only available when the command is run by an in-game player.
+- "你" (you) = the target bot named in `/ai <bot> <command>`.
+- Both the sender and bot crosshair targets are scanned, so commands can refer to either perspective.
 
 ```
 /ai Steve 挖我面前的方块    → Uses YOUR crosshair target
 /ai Steve 走到我这里来      → Moves to YOUR position
 /ai Steve 挖你面前的方块    → Uses BOT's crosshair target
+/ai Steve 到你脚下放个方块  → Places at the bot position Y-1
 ```
 
 ### Bot Management
