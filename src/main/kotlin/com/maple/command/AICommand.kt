@@ -14,7 +14,7 @@ import net.minecraft.commands.Commands
 import net.minecraft.network.chat.Component
 
 /**
- * 注册 /ai 指令。
+ * 注册 /anima 指令。
  * 控制 Carpet 生成的假人，不自己生成。
  */
 object AICommand {
@@ -33,7 +33,7 @@ object AICommand {
     fun register() {
         CommandRegistrationCallback.EVENT.register { dispatcher, _, _ ->
             dispatcher.register(
-                Commands.literal("ai")
+                Commands.literal("anima")
                     .then(Commands.literal("stop")
                         .then(Commands.argument("name", StringArgumentType.word())
                             .executes { stopBot(it) }
@@ -160,7 +160,7 @@ object AICommand {
     private fun locateStructure(context: CommandContext<CommandSourceStack>): Int {
         val raw = StringArgumentType.getString(context, "structure").trim()
         if (raw.isBlank()) {
-            context.source.sendFailure(Component.literal("用法：/ai locate <结构名> [搜索半径chunk]"))
+            context.source.sendFailure(Component.literal("用法：/anima locate <结构名> [搜索半径chunk]"))
             return 0
         }
 
@@ -269,7 +269,7 @@ object AICommand {
         }
 
         context.source.sendSuccess({
-            Component.literal("使用 /ai plan resume <假人名> <文件名> 恢复执行")
+            Component.literal("使用 /anima plan resume <假人名> <文件名> 恢复执行")
         }, false)
 
         return Command.SINGLE_SUCCESS

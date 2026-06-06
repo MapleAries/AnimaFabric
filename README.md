@@ -2,7 +2,7 @@
 
 [中文文档](README_CN.md)
 
-A Minecraft Fabric mod that brings LLM-powered AI agents into your game. Send natural language commands via `/ai`, and watch AI-controlled bots execute them — mining, building, fighting, pathfinding, and more. Built on [Carpet Mod](https://github.com/gnembon/fabric-carpet) for reliable bot control.
+A Minecraft Fabric mod that brings LLM-powered AI agents into your game. Send natural language commands via `/anima`, and watch AI-controlled bots execute them — mining, building, fighting, pathfinding, and more. Built on [Carpet Mod](https://github.com/gnembon/fabric-carpet) for reliable bot control.
 
 ## Features
 
@@ -60,29 +60,29 @@ Carpet handles bot spawning. Use `/gamemode creative Steve` to switch modes.
 
 All commands go through LLM for intelligent planning:
 ```
-/ai Steve mine some wood
-/ai Steve come to me
-/ai Steve dig the block I'm looking at
-/ai Steve build a small house at 100 64 200
-/ai Steve find diamonds
+/anima Steve mine some wood
+/anima Steve come to me
+/anima Steve dig the block I'm looking at
+/anima Steve build a small house at 100 64 200
+/anima Steve find diamonds
 ```
 
 ### Chat With the AI
 
-Use `/ai chat` for direct conversation with the model. It reads the most recently active bot's memory, so you can ask follow-up questions about previous tasks.
+Use `/anima chat` for direct conversation with the model. It reads the most recently active bot's memory, so you can ask follow-up questions about previous tasks.
 
 ```
-/ai Steve place a crafting table at 100 64 200
-/ai chat Where did you place the crafting table?
+/anima Steve place a crafting table at 100 64 200
+/anima chat Where did you place the crafting table?
 ```
 
 ### Bot Management
 
 ```
-/ai list              — List all active bots
-/ai stop Steve        — Stop a bot's current action
-/ai kill Steve        — Remove a specific bot
-/ai killall           — Remove all bots
+/anima list              — List all active bots
+/anima stop Steve        — Stop a bot's current action
+/anima kill Steve        — Remove a specific bot
+/anima killall           — Remove all bots
 ```
 
 ### Structure Location
@@ -90,27 +90,27 @@ Use `/ai chat` for direct conversation with the model. It reads the most recentl
 You can ask a bot naturally, or query directly from your current position:
 
 ```
-/ai Steve find the nearest village
-/ai locate village
-/ai locate ancient_city 200
-/ai locate #minecraft:village
+/anima Steve find the nearest village
+/anima locate village
+/anima locate ancient_city 200
+/anima locate #minecraft:village
 ```
 
 ### Task Plans
 
 Complex tasks are decomposed into JSON plan files:
 ```
-/ai plan              — List all plan files
-/ai plan resume <bot> <file> — Resume a paused plan for a bot
+/anima plan              — List all plan files
+/anima plan resume <bot> <file> — Resume a paused plan for a bot
 ```
 
 ### Runtime Config
 
 ```
-/ai config show                — Display current config
-/ai config url <url>           — Change API endpoint
-/ai config key <key>           — Change API key
-/ai config model <model>       — Change model name
+/anima config show                — Display current config
+/anima config url <url>           — Change API endpoint
+/anima config key <key>           — Change API key
+/anima config model <model>       — Change model name
 ```
 
 ## Available Tools
@@ -142,7 +142,7 @@ Complex tasks are decomposed into JSON plan files:
 ## Architecture
 
 ```
-Player → /ai command → TaskPlanner
+Player → /anima command → TaskPlanner
                           ├── LLM decomposition → JSON plan file
                           └── Step-by-step execution
                                 ↓

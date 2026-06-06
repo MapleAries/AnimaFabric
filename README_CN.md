@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-一个 Minecraft Fabric Mod，让大语言模型（LLM）驱动的 AI 智能体进入你的游戏。通过 `/ai` 命令发送自然语言指令，AI 假人会自动执行——挖矿、建造、战斗、寻路，样样都行。基于 [Carpet Mod](https://github.com/gnembon/fabric-carpet) 实现可靠的假人控制。
+一个 Minecraft Fabric Mod，让大语言模型（LLM）驱动的 AI 智能体进入你的游戏。通过 `/anima` 命令发送自然语言指令，AI 假人会自动执行——挖矿、建造、战斗、寻路，样样都行。基于 [Carpet Mod](https://github.com/gnembon/fabric-carpet) 实现可靠的假人控制。
 
 ## 特性
 
@@ -60,29 +60,29 @@ Carpet 负责假人生成。用 `/gamemode creative Steve` 切换游戏模式。
 
 所有指令都经过 LLM 智能规划：
 ```
-/ai Steve 去砍点木头
-/ai Steve 到 100 64 200
-/ai Steve 挖附近的石头
-/ai Steve 在 100 64 200 建一个小房子
-/ai Steve 找钻石
+/anima Steve 去砍点木头
+/anima Steve 到 100 64 200
+/anima Steve 挖附近的石头
+/anima Steve 在 100 64 200 建一个小房子
+/anima Steve 找钻石
 ```
 
 ### 与 AI 聊天
 
-使用 `/ai chat` 可以直接和大模型对话。它会读取最近活跃假人的记忆，因此可以追问刚才任务里的信息。
+使用 `/anima chat` 可以直接和大模型对话。它会读取最近活跃假人的记忆，因此可以追问刚才任务里的信息。
 
 ```
-/ai Steve 在 100 64 200 放置一个工作台
-/ai chat 工作台放在哪了
+/anima Steve 在 100 64 200 放置一个工作台
+/anima chat 工作台放在哪了
 ```
 
 ### 假人管理
 
 ```
-/ai list              — 列出所有活跃假人
-/ai stop Steve        — 停止假人当前动作
-/ai kill Steve        — 移除指定假人
-/ai killall           — 移除所有假人
+/anima list              — 列出所有活跃假人
+/anima stop Steve        — 停止假人当前动作
+/anima kill Steve        — 移除指定假人
+/anima killall           — 移除所有假人
 ```
 
 ### 结构定位
@@ -90,27 +90,27 @@ Carpet 负责假人生成。用 `/gamemode creative Steve` 切换游戏模式。
 既可以用自然语言让假人寻找，也可以从玩家当前位置直接查询：
 
 ```
-/ai Steve 找最近的村庄
-/ai locate village
-/ai locate ancient_city 200
-/ai locate #minecraft:village
+/anima Steve 找最近的村庄
+/anima locate village
+/anima locate ancient_city 200
+/anima locate #minecraft:village
 ```
 
 ### 任务计划
 
 复杂任务会自动分解为 JSON 计划文件：
 ```
-/ai plan              — 列出所有计划文件
-/ai plan resume <假人名> <文件名> — 为指定假人恢复执行暂停的计划
+/anima plan              — 列出所有计划文件
+/anima plan resume <假人名> <文件名> — 为指定假人恢复执行暂停的计划
 ```
 
 ### 运行时配置
 
 ```
-/ai config show                — 显示当前配置
-/ai config url <url>           — 修改 API 地址
-/ai config key <key>           — 修改 API 密钥
-/ai config model <model>       — 修改模型名称
+/anima config show                — 显示当前配置
+/anima config url <url>           — 修改 API 地址
+/anima config key <key>           — 修改 API 密钥
+/anima config model <model>       — 修改模型名称
 ```
 
 ## 工具列表
@@ -142,7 +142,7 @@ Carpet 负责假人生成。用 `/gamemode creative Steve` 切换游戏模式。
 ## 架构
 
 ```
-玩家 → /ai 指令 → TaskPlanner（任务规划器）
+玩家 → /anima 指令 → TaskPlanner（任务规划器）
                       ├── LLM 分解 → JSON 计划文件
                       └── 逐步执行
                             ↓
