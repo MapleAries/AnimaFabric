@@ -283,15 +283,24 @@ $worldState
             ChatMessage("user", command)
         )
 
-        val response = llmClient.chatStream(messages)
-        println("[AnimaFabric] 任务分解结果: ${response.content}")
+        repeat(2) { attempt ->
+            val response = llmClient.chatStream(messages)
+            println("[AnimaFabric] 任务分解结果（尝试 ${attempt + 1}/2）: ${response.content}")
 
-        // 尝试从 content 提取
-        val steps = parseSteps(response.content)
-        if (steps.isNotEmpty()) return steps
+            // 尝试从 content 提取
+            val steps = parseSteps(response.content)
+            if (steps.isNotEmpty()) return steps
 
-        // fallback: 从 thinking 提取
-        return parseSteps(response.thinking)
+            // fallback: 从 thinking 提取
+            val thinkingSteps = parseSteps(response.thinking)
+            if (thinkingSteps.isNotEmpty()) return thinkingSteps
+
+            if (attempt == 0) {
+                kotlinx.coroutines.delay(500)
+            }
+        }
+
+        return emptyList()
     }
 
     /**

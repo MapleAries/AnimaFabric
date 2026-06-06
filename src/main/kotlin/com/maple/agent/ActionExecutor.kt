@@ -513,19 +513,11 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val y = getIntParam(params, "y") ?: return "缺少参数 y"
         val z = getIntParam(params, "z") ?: return "缺少参数 z"
         val blockName = params["block"] as? String ?: return "缺少参数 block"
-        val targetPos = BlockPos(x, y, z)
+        val requestedPos = BlockPos(x, y, z)
         val itemId = resolveItemId(blockName)
 
-        val targetIsAir = GameThreadDispatcher.runOnGameThread(server) {
-            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
-            bot.level().getBlockState(targetPos).isAir
-        } ?: return "Bot 不存在"
-        if (!targetIsAir) {
-            return "放置失败：目标位置 ($x, $y, $z) 已被占用"
-        }
-
-        val supportPos = findPlacementSupport(targetPos)
-            ?: return "放置失败：目标位置 ($x, $y, $z) 周围没有可点击的支撑方块"
+        val (targetPos, supportPos) = resolvePlacementTarget(requestedPos)
+            ?: return "放置失败：目标位置 ($x, $y, $z) 已被占用，且无法推断可放置的相邻空气格"
 
         if (!ensureMainHandItem(itemId)) {
             return "放置失败：无法将 $blockName 准备到主手"
@@ -539,9 +531,25 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
 
         val placedBlock = waitForPlacedBlock(targetPos)
         return if (placedBlock != null) {
-            "已在 ($x, $y, $z) 放置 $placedBlock"
+            "已在 (${targetPos.x}, ${targetPos.y}, ${targetPos.z}) 放置 $placedBlock"
         } else {
-            "放置失败：目标位置 ($x, $y, $z) 未变为 $blockName，请检查距离、准星面和主手方块"
+            "放置失败：目标位置 (${targetPos.x}, ${targetPos.y}, ${targetPos.z}) 未变为 $blockName，请检查距离、准星面和主手方块"
+        }
+    }
+
+    private suspend fun resolvePlacementTarget(requestedPos: BlockPos): Pair<BlockPos, BlockPos>? {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
+            val level = bot.level()
+            val requestedState = level.getBlockState(requestedPos)
+
+            if (requestedState.isAir) {
+                val support = findPlacementSupportInLevel(level, requestedPos)
+                if (support != null) requestedPos to support else null
+            } else {
+                val above = requestedPos.above()
+                if (level.getBlockState(above).isAir) above to requestedPos else null
+            }
         }
     }
 
@@ -562,19 +570,18 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         }
     }
 
-    private suspend fun findPlacementSupport(targetPos: BlockPos): BlockPos? {
-        return GameThreadDispatcher.runOnGameThread(server) {
-            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
-            val level = bot.level()
-            listOf(
-                targetPos.below(),
-                targetPos.north(),
-                targetPos.south(),
-                targetPos.east(),
-                targetPos.west(),
-                targetPos.above()
-            ).firstOrNull { !level.getBlockState(it).isAir }
-        }
+    private fun findPlacementSupportInLevel(
+        level: net.minecraft.world.level.Level,
+        targetPos: BlockPos
+    ): BlockPos? {
+        return listOf(
+            targetPos.below(),
+            targetPos.north(),
+            targetPos.south(),
+            targetPos.east(),
+            targetPos.west(),
+            targetPos.above()
+        ).firstOrNull { !level.getBlockState(it).isAir }
     }
 
     private suspend fun waitForPlacedBlock(targetPos: BlockPos): String? {
