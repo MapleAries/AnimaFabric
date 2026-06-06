@@ -201,17 +201,7 @@ class TaskPlanner(
      * 检查执行结果是否失败。
      */
     private fun isResultFailed(result: String): Boolean {
-        return result.startsWith("Failed") ||
-               result.startsWith("Error") ||
-               result.startsWith("挖掘失败") ||
-               result.startsWith("放置失败") ||
-               result.startsWith("移动未完成") ||
-               result.startsWith("Bot 不存在") ||
-               result.startsWith("未知工具") ||
-               result.startsWith("无效方向") ||
-               result.startsWith("合成失败") ||
-               result.startsWith("给予物品失败") ||
-               result.startsWith("无法")
+        return ActionResultClassifier.isFailure(result)
     }
 
     /**

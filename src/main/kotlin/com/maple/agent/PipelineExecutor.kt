@@ -451,12 +451,7 @@ class PipelineExecutor(
 
             val result = actionExecutor.execute(command.tool, resolvedParams)
 
-            val failed = result.startsWith("Failed") ||
-                         result.startsWith("Error") ||
-                         result.startsWith("挖掘失败") ||
-                         result.startsWith("移动未完成") ||
-                         result.startsWith("Bot 不存在") ||
-                         result.startsWith("未知工具")
+            val failed = ActionResultClassifier.isFailure(result)
 
             results.add(StepResult(command.tool, result, failed))
 
