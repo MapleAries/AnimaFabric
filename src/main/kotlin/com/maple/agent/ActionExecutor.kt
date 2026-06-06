@@ -4,6 +4,7 @@ import com.maple.entity.FakePlayerManager
 import com.maple.pathfinding.AStarPathfinder
 import com.maple.pathfinding.MovementType
 import net.minecraft.core.BlockPos
+import net.minecraft.world.item.Item
 
 /**
  * 工具执行器 - 通过 Carpet /player 命令控制 bot。
@@ -87,6 +88,19 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         }
     }
 
+    private suspend fun executeServerCommand(command: String): Boolean {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            try {
+                println("[AnimaFabric] 执行服务器命令: $command")
+                server.commands.performPrefixedCommand(server.createCommandSourceStack(), command)
+                true
+            } catch (e: Exception) {
+                println("[AnimaFabric] 服务器命令执行异常: ${e.message}")
+                false
+            }
+        }
+    }
+
     private fun getIntParam(params: Map<String, Any>, key: String): Int? {
         val value = params[key] ?: return null
         return when (value) {
@@ -98,6 +112,34 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
 
     private fun getStringParam(params: Map<String, Any>, key: String): String? {
         return params[key]?.toString()
+    }
+
+    private fun resolveItemId(item: String): String {
+        val itemMapping = mapOf(
+            "planks" to "minecraft:oak_planks",
+            "oak_planks" to "minecraft:oak_planks",
+            "crafting_table" to "minecraft:crafting_table",
+            "stick" to "minecraft:stick",
+            "wooden_pickaxe" to "minecraft:wooden_pickaxe",
+            "wooden_axe" to "minecraft:wooden_axe",
+            "wooden_sword" to "minecraft:wooden_sword",
+            "stone_pickaxe" to "minecraft:stone_pickaxe",
+            "stone_axe" to "minecraft:stone_axe",
+            "stone_sword" to "minecraft:stone_sword",
+            "iron_pickaxe" to "minecraft:iron_pickaxe",
+            "iron_axe" to "minecraft:iron_axe",
+            "iron_sword" to "minecraft:iron_sword",
+            "furnace" to "minecraft:furnace",
+            "torch" to "minecraft:torch",
+            "chest" to "minecraft:chest",
+            "bread" to "minecraft:bread",
+            "iron_ingot" to "minecraft:iron_ingot",
+            "gold_ingot" to "minecraft:gold_ingot",
+            "diamond" to "minecraft:diamond",
+            "cobblestone" to "minecraft:cobblestone"
+        )
+        val normalized = item.lowercase().removePrefix("minecraft:")
+        return itemMapping[normalized] ?: "minecraft:$normalized"
     }
 
     // ========== 移动 ==========
@@ -472,6 +514,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val z = getIntParam(params, "z") ?: return "缺少参数 z"
         val blockName = params["block"] as? String ?: return "缺少参数 block"
         val targetPos = BlockPos(x, y, z)
+        val itemId = resolveItemId(blockName)
 
         val targetIsAir = GameThreadDispatcher.runOnGameThread(server) {
             val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
@@ -481,8 +524,15 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             return "放置失败：目标位置 ($x, $y, $z) 已被占用"
         }
 
-        // 看向放置位置
-        executeCarpetCommand("look at $x $y $z")
+        val supportPos = findPlacementSupport(targetPos)
+            ?: return "放置失败：目标位置 ($x, $y, $z) 周围没有可点击的支撑方块"
+
+        if (!ensureMainHandItem(itemId)) {
+            return "放置失败：无法将 $blockName 准备到主手"
+        }
+
+        // 看向支撑方块，让右键能把方块放到目标空气格。
+        executeCarpetCommand("look at ${supportPos.x} ${supportPos.y} ${supportPos.z}")
 
         // 使用物品放置（use = 右键）
         executeCarpetCommand("use")
@@ -492,6 +542,38 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             "已在 ($x, $y, $z) 放置 $placedBlock"
         } else {
             "放置失败：目标位置 ($x, $y, $z) 未变为 $blockName，请检查距离、准星面和主手方块"
+        }
+    }
+
+    private suspend fun ensureMainHandItem(itemId: String): Boolean {
+        if (isMainHandItem(itemId)) return true
+        if (!executeServerCommand("item replace entity $botName weapon.mainhand with $itemId 1")) {
+            return false
+        }
+        kotlinx.coroutines.delay(100)
+        return isMainHandItem(itemId)
+    }
+
+    private suspend fun isMainHandItem(itemId: String): Boolean {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread false
+            val stack = bot.mainHandItem
+            !stack.isEmpty && Item.getId(stack.item).toString().equals(itemId, ignoreCase = true)
+        }
+    }
+
+    private suspend fun findPlacementSupport(targetPos: BlockPos): BlockPos? {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
+            val level = bot.level()
+            listOf(
+                targetPos.below(),
+                targetPos.north(),
+                targetPos.south(),
+                targetPos.east(),
+                targetPos.west(),
+                targetPos.above()
+            ).firstOrNull { !level.getBlockState(it).isAir }
         }
     }
 
@@ -593,32 +675,7 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
 
     private suspend fun executeCraft(params: Map<String, Any>): String {
         val item = params["param0"] as? String ?: params["item"] as? String ?: return "缺少参数 item"
-
-        val itemMapping = mapOf(
-            "planks" to "minecraft:oak_planks",
-            "oak_planks" to "minecraft:oak_planks",
-            "crafting_table" to "minecraft:crafting_table",
-            "stick" to "minecraft:stick",
-            "wooden_pickaxe" to "minecraft:wooden_pickaxe",
-            "wooden_axe" to "minecraft:wooden_axe",
-            "wooden_sword" to "minecraft:wooden_sword",
-            "stone_pickaxe" to "minecraft:stone_pickaxe",
-            "stone_axe" to "minecraft:stone_axe",
-            "stone_sword" to "minecraft:stone_sword",
-            "iron_pickaxe" to "minecraft:iron_pickaxe",
-            "iron_axe" to "minecraft:iron_axe",
-            "iron_sword" to "minecraft:iron_sword",
-            "furnace" to "minecraft:furnace",
-            "torch" to "minecraft:torch",
-            "chest" to "minecraft:chest",
-            "bread" to "minecraft:bread",
-            "iron_ingot" to "minecraft:iron_ingot",
-            "gold_ingot" to "minecraft:gold_ingot",
-            "diamond" to "minecraft:diamond",
-            "cobblestone" to "minecraft:cobblestone"
-        )
-
-        val itemId = itemMapping[item.lowercase()] ?: "minecraft:${item.lowercase()}"
+        val itemId = resolveItemId(item)
 
         return try {
             GameThreadDispatcher.runOnGameThread(server) {

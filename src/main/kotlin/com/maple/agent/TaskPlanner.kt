@@ -96,15 +96,16 @@ class TaskPlanner(
         sendChat("开始执行任务：${plan.task.take(30)}（共 ${plan.steps.size} 步）")
 
         // 从当前步骤开始（支持恢复）
-        var startIndex = plan.currentStep
+        var i = plan.currentStep
 
-        for (i in startIndex until plan.steps.size) {
+        while (i < plan.steps.size) {
             val step = plan.steps[i]
             plan.currentStep = i
 
             // 跳过已完成的步骤
             if (step.status == StepStatus.DONE) {
                 results.add("步骤 ${step.id}: ${step.description} → ${step.result}（已完成）")
+                i++
                 continue
             }
 
@@ -154,8 +155,9 @@ class TaskPlanner(
                     break
                 }
 
-                // 单次失败，重试
+                // 单次失败，重试当前步骤
                 isFailed = false
+                step.status = StepStatus.PENDING
                 TaskPlanManager.update(plan, planPath)
                 continue
             }
@@ -167,6 +169,7 @@ class TaskPlanner(
             results.add("步骤 ${step.id}: ${step.description} → $result")
             sendChat("✅ 步骤 ${step.id} 完成：$result")
             TaskPlanManager.update(plan, planPath)
+            i++
         }
 
         // 更新最终状态
