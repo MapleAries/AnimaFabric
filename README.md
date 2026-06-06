@@ -11,7 +11,6 @@ A Minecraft Fabric mod that brings LLM-powered AI agents into your game. Send na
 - **A* Pathfinding** — Auto-navigation with executable movement steps and position feedback
 - **Smart Behaviors** — Self-preservation (low health/lava/drowning), auto-combat, unstuck detection
 - **World Perception** — Bots understand surroundings: blocks, entities, terrain, crosshair targets
-- **Pronoun Resolution** — "我面前的方块" = your crosshair target, "你面前的方块" = bot's crosshair target
 - **File-based Task Plans** — Complex tasks decomposed into JSON plans, editable, retryable, and resumable per bot
 - **Conversation Memory** — Per-bot chat history with automatic summarization
 - **OpenAI-Compatible API** — Works with DeepSeek, OpenAI, or any compatible endpoint
@@ -73,21 +72,8 @@ All commands go through LLM for intelligent planning:
 Use `/ai chat` for direct conversation with the model. It reads the most recently active bot's memory, so you can ask follow-up questions about previous tasks.
 
 ```
-/ai Steve place a crafting table in front of you
+/ai Steve place a crafting table at 100 64 200
 /ai chat Where did you place the crafting table?
-```
-
-### Pronoun Resolution
-
-- "我" (I/me) = the player who sent the command. Player position and crosshair target are only available when the command is run by an in-game player.
-- "你" (you) = the target bot named in `/ai <bot> <command>`.
-- Both the sender and bot crosshair targets are scanned, so commands can refer to either perspective.
-
-```
-/ai Steve 挖我面前的方块    → Uses YOUR crosshair target
-/ai Steve 走到我这里来      → Moves to YOUR position
-/ai Steve 挖你面前的方块    → Uses BOT's crosshair target
-/ai Steve 到你脚下放个方块  → Places at the bot position Y-1
 ```
 
 ### Bot Management
@@ -158,7 +144,6 @@ Complex tasks are decomposed into JSON plan files:
 ```
 Player → /ai command → TaskPlanner
                           ├── LLM decomposition → JSON plan file
-                          ├── Pronoun resolution (我/你)
                           └── Step-by-step execution
                                 ↓
                           ActionExecutor → Carpet /player commands
