@@ -98,6 +98,17 @@ Carpet 负责假人生成。用 `/gamemode creative Steve` 切换游戏模式。
 /ai killall           — 移除所有假人
 ```
 
+### 结构定位
+
+既可以用自然语言让假人寻找，也可以从玩家当前位置直接查询：
+
+```
+/ai Steve 找最近的村庄
+/ai locate village
+/ai locate ancient_city 200
+/ai locate #minecraft:village
+```
+
 ### 任务计划
 
 复杂任务会自动分解为 JSON 计划文件：

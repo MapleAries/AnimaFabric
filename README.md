@@ -97,6 +97,17 @@ Use `/ai chat` for direct conversation with the model. It reads the most recentl
 /ai killall           — Remove all bots
 ```
 
+### Structure Location
+
+You can ask a bot naturally, or query directly from your current position:
+
+```
+/ai Steve find the nearest village
+/ai locate village
+/ai locate ancient_city 200
+/ai locate #minecraft:village
+```
+
 ### Task Plans
 
 Complex tasks are decomposed into JSON plan files:

@@ -3,10 +3,12 @@ package com.maple.command
 import com.maple.agent.AgentController
 import com.maple.config.AnimaFabricConfig
 import com.maple.entity.FakePlayerManager
+import com.maple.locate.StructureLocator
 import com.mojang.brigadier.Command
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
+import net.minecraft.core.BlockPos
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
 import net.minecraft.network.chat.Component
@@ -48,6 +50,11 @@ object AICommand {
                     .then(Commands.literal("chat")
                         .then(Commands.argument("message", StringArgumentType.greedyString())
                             .executes { chat(it) }
+                        )
+                    )
+                    .then(Commands.literal("locate")
+                        .then(Commands.argument("structure", StringArgumentType.greedyString())
+                            .executes { locateStructure(it) }
                         )
                     )
                     .then(Commands.literal("killall")
@@ -148,6 +155,34 @@ object AICommand {
         }
 
         return Command.SINGLE_SUCCESS
+    }
+
+    private fun locateStructure(context: CommandContext<CommandSourceStack>): Int {
+        val raw = StringArgumentType.getString(context, "structure").trim()
+        if (raw.isBlank()) {
+            context.source.sendFailure(Component.literal("用法：/ai locate <结构名> [搜索半径chunk]"))
+            return 0
+        }
+
+        val (structure, radius) = parseLocateArgument(raw)
+        val source = context.source
+        val origin = BlockPos.containing(source.position)
+        val result = StructureLocator.locate(source.level, origin, structure, radius)
+
+        source.sendSuccess({
+            Component.literal("[locate] $result")
+        }, false)
+
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun parseLocateArgument(raw: String): Pair<String, Int> {
+        val parts = raw.split(Regex("\\s+")).filter { it.isNotBlank() }
+        val maybeRadius = parts.lastOrNull()?.toIntOrNull()
+        if (maybeRadius != null && parts.size > 1) {
+            return parts.dropLast(1).joinToString(" ") to maybeRadius
+        }
+        return raw to 100
     }
 
     private fun stopBot(context: CommandContext<CommandSourceStack>): Int {
