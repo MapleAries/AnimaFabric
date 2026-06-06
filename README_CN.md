@@ -137,6 +137,7 @@ Carpet 负责假人生成。用 `/gamemode creative Steve` 切换游戏模式。
 | `getInventory()` | 查看背包 |
 | `getHealth()` / `getHunger()` | 查看血量/饥饿值 |
 | `scanArea(radius)` | 扫描周围方块 |
+| `locateStructure(structure, radius)` | 定位最近的已注册结构或结构标签，如 `village`、`ancient_city`、`minecraft:mansion`、`#minecraft:village` |
 | `sendMessage(message)` | 发送聊天消息 |
 | `stop()` | 停止所有动作 |
 

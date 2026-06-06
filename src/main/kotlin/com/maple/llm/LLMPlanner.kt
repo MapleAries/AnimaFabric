@@ -32,6 +32,7 @@ $toolDescriptions
 3. 坐标必须来自世界状态，不要编造
 4. 距离超过 6 格的目标，先用 !moveTo 靠近
 5. !sneak() 是切换状态：第一次蹲下，第二次站起来
+6. 要寻找村庄、古城、沙漠神殿、要塞、林地府邸等结构时，先用 !locateStructure 查询坐标
 
 ### 任务分解原则
 对于复杂任务，按以下步骤思考：
@@ -48,12 +49,14 @@ $toolDescriptions
 - "跳一下" → !jump()
 - "看看背包" → !getInventory()
 - "扫描周围" → !scanArea(5)
+- "最近的村庄在哪" → !locateStructure(village)
 
 ### 复合任务
 - "往前走5步然后蹲下再站起来" → !move(forward, 5) !sneak() !sneak()
 - "往前走10步然后蹲下3秒再站起来" → !move(forward, 10) !sneak(3000)  （sneak(3000) 自动在3秒后站起来）
 - "走到100 64 200然后挖方块" → !moveTo(100, 64, 200) !mineBlock(100, 64, 200)
 - "转身往回走" → !turn(back) !move(forward, 5)
+- "找最近的古城" → !locateStructure(ancient_city)
 
 ### sneak 命令说明
 - !sneak() — 切换状态（第一次蹲下，第二次站起来）
@@ -83,6 +86,7 @@ $toolDescriptions
             "moveTo" -> "自动寻路，会避开障碍物"
             "mineBlock" -> "距离必须 ≤5 格，否则先 moveTo"
             "placeBlock" -> "需要主手有方块物品"
+            "locateStructure" -> "返回最近结构坐标；如果要前往该结构，先定位，再按返回坐标 moveTo"
             "sneak" -> "切换模式：调用一次蹲下，再调用一次站起来"
             "look" -> "yaw: 0=南, 90=西, 180=北, 270=东; pitch: -90=上, 0=平, 90=下"
             else -> ""
@@ -133,7 +137,7 @@ $task
 
 ## 要求
 1. 将任务分解为 2-6 个简单命令
-2. 每个命令必须是以下之一：!move, !moveTo, !turn, !jump, !sneak, !mineBlock, !placeBlock, !attack, !use, !scanArea, !getInventory, !getHealth, !sendMessage, !stop
+2. 每个命令必须是以下之一：!move, !moveTo, !turn, !jump, !sneak, !mineBlock, !placeBlock, !attack, !use, !scanArea, !locateStructure, !getInventory, !getHealth, !sendMessage, !stop
 3. 使用实际坐标（从世界状态中获取）
 4. 输出格式：每行一个命令
 

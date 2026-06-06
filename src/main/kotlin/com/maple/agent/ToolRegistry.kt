@@ -114,6 +114,15 @@ object ToolRegistry {
             stateKeys = listOf("scan_result")
         ),
         Tool(
+            name = "locateStructure",
+            description = "定位最近的世界结构，支持具体结构或结构标签，如 village、ancient_city、desert_pyramid、mansion、stronghold、minecraft:village、#minecraft:village。",
+            parameters = listOf(
+                ToolParameter("structure", "string", "结构名称、结构 ID 或结构标签"),
+                ToolParameter("radius", "number", "搜索半径（chunk），默认 100", required = false)
+            ),
+            stateKeys = listOf("structure_location")
+        ),
+        Tool(
             name = "sendMessage",
             description = "向玩家发送聊天消息。",
             parameters = listOf(

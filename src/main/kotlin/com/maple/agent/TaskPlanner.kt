@@ -168,6 +168,7 @@ class TaskPlanner(
             isFailed = false
             results.add("步骤 ${step.id}: ${step.description} → $result")
             sendChat("✅ 步骤 ${step.id} 完成：$result")
+            appendStructureMoveStepIfNeeded(plan, step, result)
             TaskPlanManager.update(plan, planPath)
             i++
         }
@@ -184,6 +185,36 @@ class TaskPlanner(
         TaskPlanManager.update(plan, planPath)
 
         return results.joinToString("\n")
+    }
+
+    private fun appendStructureMoveStepIfNeeded(plan: TaskPlan, step: PlanStep, result: String) {
+        if (!step.command.startsWith("!locateStructure")) return
+        if (!wantsToTravelToLocatedStructure(plan.task)) return
+        if (plan.steps.drop(plan.currentStep + 1).any { it.command.startsWith("!moveTo") }) return
+
+        val pos = extractBlockPos(result) ?: return
+        plan.steps.add(
+            PlanStep(
+                id = plan.steps.size + 1,
+                description = "移动到定位结构",
+                command = "!moveTo(${pos.x},${pos.y},${pos.z})"
+            )
+        )
+        println("[AnimaFabric] 已根据结构定位结果追加移动步骤: ${pos.x}, ${pos.y}, ${pos.z}")
+    }
+
+    private fun wantsToTravelToLocatedStructure(task: String): Boolean {
+        val lower = task.lowercase()
+        return listOf("去", "前往", "到达", "走到", "移动到", "go to", "travel to", "visit").any { it in lower }
+    }
+
+    private fun extractBlockPos(text: String): net.minecraft.core.BlockPos? {
+        val match = Regex("""坐标\s*\((-?\d+),\s*(-?\d+),\s*(-?\d+)\)""").find(text) ?: return null
+        return net.minecraft.core.BlockPos(
+            match.groupValues[1].toInt(),
+            match.groupValues[2].toInt(),
+            match.groupValues[3].toInt()
+        )
     }
 
     /**
@@ -264,13 +295,14 @@ class TaskPlanner(
 可用命令：
 !moveTo(x,y,z) !move(dir,n) !turn(dir) !jump() !sneak()
 !mineBlock(x,y,z) !placeBlock(x,y,z,block) !craft(item)
-!scanArea(r) !getInventory() !attack() !use() !sendMessage(text)
+!scanArea(r) !locateStructure(structure,radius) !getInventory() !attack() !use() !sendMessage(text)
 
 重要规则：
 1. 每个命令只出现一次，不要重复
 2. 如果需要放置方块但背包为空，先用 !craft 获取方块
 3. 坐标必须来自世界状态，不要编造坐标
 4. 最多 6 个步骤
+5. 需要寻找村庄、古城、要塞、神殿、府邸等结构时，先用 !locateStructure 查询坐标
 
 $pronounContext
 
@@ -320,7 +352,7 @@ $worldState
 已完成：$completed
 当前状态：$worldState
 
-可用命令：!moveTo(x,y,z) !move(dir,n) !mineBlock(x,y,z) !craft(item) !scanArea(r) !getInventory() !use() !sendMessage(text)
+可用命令：!moveTo(x,y,z) !move(dir,n) !mineBlock(x,y,z) !craft(item) !scanArea(r) !locateStructure(structure,radius) !getInventory() !use() !sendMessage(text)
 """
 
         val messages = listOf(
@@ -380,6 +412,7 @@ $worldState
             "getHealth" -> "查看血量"
             "getHunger" -> "查看饥饿值"
             "scanArea" -> "扫描周围"
+            "locateStructure" -> "定位结构"
             "sendMessage" -> "发送消息"
             "stop" -> "停止"
             "sneak" -> "潜行"

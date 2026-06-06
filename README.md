@@ -136,6 +136,7 @@ Complex tasks are decomposed into JSON plan files:
 | `getInventory()` | List inventory contents |
 | `getHealth()` / `getHunger()` | Check health/hunger |
 | `scanArea(radius)` | Scan surrounding blocks |
+| `locateStructure(structure, radius)` | Locate the nearest registered structure or structure tag, such as `village`, `ancient_city`, `minecraft:mansion`, or `#minecraft:village` |
 | `sendMessage(message)` | Send chat message |
 | `stop()` | Stop all actions |
 

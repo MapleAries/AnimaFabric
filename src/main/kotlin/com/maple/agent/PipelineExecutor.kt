@@ -460,6 +460,8 @@ class PipelineExecutor(
                 sharedState.set("moveTo_result", result)
             } else if (command.tool == "mineBlock") {
                 sharedState.set("mineBlock_result", result)
+            } else if (command.tool == "locateStructure") {
+                sharedState.set("structure_location", result)
             }
 
             // 如果步骤失败，停止执行后续步骤
