@@ -471,6 +471,15 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val y = getIntParam(params, "y") ?: return "缺少参数 y"
         val z = getIntParam(params, "z") ?: return "缺少参数 z"
         val blockName = params["block"] as? String ?: return "缺少参数 block"
+        val targetPos = BlockPos(x, y, z)
+
+        val targetIsAir = GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
+            bot.level().getBlockState(targetPos).isAir
+        } ?: return "Bot 不存在"
+        if (!targetIsAir) {
+            return "放置失败：目标位置 ($x, $y, $z) 已被占用"
+        }
 
         // 看向放置位置
         executeCarpetCommand("look at $x $y $z")
@@ -478,7 +487,27 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         // 使用物品放置（use = 右键）
         executeCarpetCommand("use")
 
-        return "已在 ($x, $y, $z) 放置 $blockName"
+        val placedBlock = waitForPlacedBlock(targetPos)
+        return if (placedBlock != null) {
+            "已在 ($x, $y, $z) 放置 $placedBlock"
+        } else {
+            "放置失败：目标位置 ($x, $y, $z) 未变为 $blockName，请检查距离、准星面和主手方块"
+        }
+    }
+
+    private suspend fun waitForPlacedBlock(targetPos: BlockPos): String? {
+        repeat(15) {
+            val (botExists, currentBlock) = GameThreadDispatcher.runOnGameThread(server) {
+                val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread false to null
+                val state = bot.level().getBlockState(targetPos)
+                true to if (!state.isAir) state.block.name.string else null
+            }
+
+            if (!botExists) return null
+            if (currentBlock != null) return currentBlock
+            kotlinx.coroutines.delay(100)
+        }
+        return null
     }
 
     // ========== 查询 ==========
