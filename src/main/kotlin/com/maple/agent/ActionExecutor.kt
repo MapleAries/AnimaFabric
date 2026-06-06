@@ -142,33 +142,61 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             server.playerList.getPlayerByName(botName)?.position()
         } ?: return "Bot 不存在"
         val movedDistance = startPos.distanceTo(endPos)
-        return "已移动到 ($x, $y, $z)（移动了${"%.1f".format(movedDistance)}格）"
+        val remainingDistance = endPos.distanceTo(net.minecraft.world.phys.Vec3.atCenterOf(BlockPos(x, y, z)))
+        if (remainingDistance > 2.0) {
+            return "移动未完成：目标 ($x, $y, $z)，当前距离 ${"%.1f".format(remainingDistance)} 格"
+        }
+        return "已移动到 ($x, $y, $z) 附近（移动了${"%.1f".format(movedDistance)}格，剩余 ${"%.1f".format(remainingDistance)}格）"
     }
 
     private suspend fun executePathStep(step: AStarPathfinder.PathStep): String? {
         val target = step.to
         executeCarpetCommand("look at ${target.x} ${target.y} ${target.z}")
 
-        when (step.moveType) {
-            in MovementType.ASCEND -> {
-                executeCarpetCommand("jump")
-                kotlinx.coroutines.delay(100)
-                executeCarpetCommand("move forward")
+        try {
+            when (step.moveType) {
+                in MovementType.ASCEND -> {
+                    executeCarpetCommand("jump")
+                    kotlinx.coroutines.delay(100)
+                    executeCarpetCommand("move forward")
+                }
+                in MovementType.HORIZONTAL,
+                in MovementType.DIAGONAL,
+                in MovementType.DESCEND -> {
+                    executeCarpetCommand("move forward")
+                }
+                else -> {
+                    return "移动未完成：路径包含暂不支持的移动类型 ${step.moveType}"
+                }
             }
-            in MovementType.HORIZONTAL,
-            in MovementType.DIAGONAL,
-            in MovementType.DESCEND -> {
-                executeCarpetCommand("move forward")
-            }
-            else -> {
-                return "移动未完成：路径包含暂不支持的移动类型 ${step.moveType}"
-            }
-        }
 
-        val durationMs = (step.cost * 50L).toLong().coerceIn(250L, 3000L)
-        kotlinx.coroutines.delay(durationMs)
-        executeCarpetCommand("stop")
-        return null
+            val maxDurationMs = (step.cost * 80L).toLong().coerceIn(700L, 4000L)
+            val reached = waitForStepTarget(target, maxDurationMs)
+            if (!reached) {
+                val distance = distanceToBlockCenter(target) ?: return "Bot 不存在"
+                return "移动未完成：未能到达路径点 (${target.x}, ${target.y}, ${target.z})，当前距离 ${"%.1f".format(distance)} 格"
+            }
+            return null
+        } finally {
+            executeCarpetCommand("stop")
+        }
+    }
+
+    private suspend fun waitForStepTarget(target: BlockPos, maxDurationMs: Long): Boolean {
+        val startedAt = System.currentTimeMillis()
+        while (System.currentTimeMillis() - startedAt < maxDurationMs) {
+            val distance = distanceToBlockCenter(target) ?: return false
+            if (distance <= 0.9) return true
+            kotlinx.coroutines.delay(100)
+        }
+        return (distanceToBlockCenter(target) ?: return false) <= 1.2
+    }
+
+    private suspend fun distanceToBlockCenter(target: BlockPos): Double? {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
+            bot.position().distanceTo(net.minecraft.world.phys.Vec3.atCenterOf(target))
+        }
     }
 
     private suspend fun executeMove(params: Map<String, Any>): String {
