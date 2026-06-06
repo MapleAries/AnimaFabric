@@ -1,6 +1,8 @@
 package com.maple.agent
 
 import com.maple.entity.FakePlayerManager
+import com.maple.pathfinding.AStarPathfinder
+import com.maple.pathfinding.MovementType
 import net.minecraft.core.BlockPos
 
 /**
@@ -105,14 +107,14 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         val y = getIntParam(params, "y") ?: return "缺少参数 y"
         val z = getIntParam(params, "z") ?: return "缺少参数 z"
 
-        val (startPos, path) = GameThreadDispatcher.runOnGameThread(server) {
+        val (startPos, pathSteps) = GameThreadDispatcher.runOnGameThread(server) {
             val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
             val level = bot.level()
-            val foundPath = com.maple.pathfinding.AStarPathfinder.findPath(level, bot.blockPosition(), BlockPos(x, y, z))
+            val foundPath = AStarPathfinder.findPathSteps(level, bot.blockPosition(), BlockPos(x, y, z))
             bot.position() to foundPath
         } ?: return "Bot 不存在"
 
-        if (path.isEmpty()) {
+        if (pathSteps.isEmpty()) {
             // fallback 到直线移动
             val dx = x - startPos.x
             val dz = z - startPos.z
@@ -131,21 +133,9 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         }
 
         // 沿 A* 路径移动
-        for (i in 1 until path.size) {
-            val previous = path[i - 1]
-            val target = path[i]
-            if (previous.x == target.x && previous.z == target.z && previous.y != target.y) {
-                return "移动未完成：路径需要垂直挖掘或搭方块，当前执行器暂不支持 (${target.x}, ${target.y}, ${target.z})"
-            }
-            val segmentDistance = Math.sqrt(
-                ((target.x - previous.x) * (target.x - previous.x) +
-                 (target.y - previous.y) * (target.y - previous.y) +
-                 (target.z - previous.z) * (target.z - previous.z)).toDouble()
-            )
-            executeCarpetCommand("look at ${target.x} ${target.y} ${target.z}")
-            executeCarpetCommand("move forward")
-            kotlinx.coroutines.delay((segmentDistance * 300L).toLong().coerceIn(300L, 3000L))
-            executeCarpetCommand("stop")
+        for (step in pathSteps) {
+            val stepResult = executePathStep(step)
+            if (stepResult != null) return stepResult
         }
 
         val endPos = GameThreadDispatcher.runOnGameThread(server) {
@@ -153,6 +143,32 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         } ?: return "Bot 不存在"
         val movedDistance = startPos.distanceTo(endPos)
         return "已移动到 ($x, $y, $z)（移动了${"%.1f".format(movedDistance)}格）"
+    }
+
+    private suspend fun executePathStep(step: AStarPathfinder.PathStep): String? {
+        val target = step.to
+        executeCarpetCommand("look at ${target.x} ${target.y} ${target.z}")
+
+        when (step.moveType) {
+            in MovementType.ASCEND -> {
+                executeCarpetCommand("jump")
+                kotlinx.coroutines.delay(100)
+                executeCarpetCommand("move forward")
+            }
+            in MovementType.HORIZONTAL,
+            in MovementType.DIAGONAL,
+            in MovementType.DESCEND -> {
+                executeCarpetCommand("move forward")
+            }
+            else -> {
+                return "移动未完成：路径包含暂不支持的移动类型 ${step.moveType}"
+            }
+        }
+
+        val durationMs = (step.cost * 50L).toLong().coerceIn(250L, 3000L)
+        kotlinx.coroutines.delay(durationMs)
+        executeCarpetCommand("stop")
+        return null
     }
 
     private suspend fun executeMove(params: Map<String, Any>): String {

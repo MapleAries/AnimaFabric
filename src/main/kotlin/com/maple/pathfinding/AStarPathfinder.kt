@@ -49,6 +49,13 @@ object AStarPathfinder {
         override fun compareTo(other: PathNode): Int = f.compareTo(other.f)
     }
 
+    data class PathStep(
+        val from: BlockPos,
+        val to: BlockPos,
+        val moveType: MovementType,
+        val cost: Double
+    )
+
     // ========== 寻路上下文 ==========
 
     /**
@@ -84,6 +91,22 @@ object AStarPathfinder {
         avoidMobs: Boolean = true
     ): List<BlockPos> {
         if (start == end) return listOf(start)
+        return findPathSteps(level, start, end, backtrackPaths, avoidMobs)
+            .toPositionPath(start)
+            .let { if (it.size <= 2) it else simplifyPath(it) }
+    }
+
+    /**
+     * 计算从 start 到 end 的可执行路径步骤。
+     */
+    fun findPathSteps(
+        level: Level,
+        start: BlockPos,
+        end: BlockPos,
+        backtrackPaths: Set<Long> = emptySet(),
+        avoidMobs: Boolean = true
+    ): List<PathStep> {
+        if (start == end) return emptyList()
         if (!MovementCostCalculator.canWalkAt(level, end)) return emptyList()
 
         val ctx = PathContext(level, start, end, backtrackPaths, avoidMobs)
@@ -95,7 +118,7 @@ object AStarPathfinder {
             // 超时检查
             val elapsed = System.currentTimeMillis() - ctx.startTime
             if (elapsed > PRIMARY_TIMEOUT_MS) {
-                val bestPath = getBestPath(ctx)
+                val bestPath = getBestPathSteps(ctx)
                 if (bestPath != null) return bestPath
                 if (elapsed > FAILURE_TIMEOUT_MS) return emptyList()
             }
@@ -104,7 +127,7 @@ object AStarPathfinder {
             val currentHash = posHash(current.pos)
 
             if (current.pos == end) {
-                return reconstructPath(current)
+                return reconstructSteps(current)
             }
 
             if (currentHash in ctx.closedSet) continue
@@ -113,7 +136,7 @@ object AStarPathfinder {
             updateBestPaths(ctx, current)
 
             // 扩展所有可能的移动
-            for (move in MovementType.ALL) {
+            for (move in MovementType.EXECUTABLE) {
                 val targetPos = getTargetPos(current.pos, move) ?: continue
                 val targetHash = posHash(targetPos)
 
@@ -136,7 +159,7 @@ object AStarPathfinder {
             }
         }
 
-        return getBestPath(ctx) ?: emptyList()
+        return getBestPathSteps(ctx) ?: emptyList()
     }
 
     // ========== 代价计算（含回避） ==========
@@ -242,6 +265,16 @@ object AStarPathfinder {
         return null
     }
 
+    private fun getBestPathSteps(ctx: PathContext): List<PathStep>? {
+        for (node in ctx.bestPaths) {
+            if (node != null) {
+                val steps = reconstructSteps(node)
+                if (steps.size >= MIN_PATH_LENGTH - 1) return steps
+            }
+        }
+        return null
+    }
+
     // ========== 工具方法 ==========
 
     private fun getTargetPos(from: BlockPos, move: MovementType): BlockPos? {
@@ -271,6 +304,26 @@ object AStarPathfinder {
             current = current.parent
         }
         return simplifyPath(rawPath)
+    }
+
+    private fun reconstructSteps(node: PathNode): List<PathStep> {
+        val steps = mutableListOf<PathStep>()
+        var current: PathNode? = node
+        while (current?.parent != null) {
+            val parent = current.parent
+            val moveType = current.moveType ?: break
+            steps.add(0, PathStep(parent.pos, current.pos, moveType, current.g - parent.g))
+            current = parent
+        }
+        return steps
+    }
+
+    private fun List<PathStep>.toPositionPath(start: BlockPos): List<BlockPos> {
+        if (isEmpty()) return emptyList()
+        return buildList {
+            add(start)
+            this@toPositionPath.forEach { add(it.to) }
+        }
     }
 
     /**

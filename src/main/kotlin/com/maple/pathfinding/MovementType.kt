@@ -58,6 +58,9 @@ enum class MovementType(
         /** 所有水平 + 对角移动 */
         val ALL_HORIZONTAL = HORIZONTAL + DIAGONAL
 
+        /** 当前 ActionExecutor 可以可靠执行的移动 */
+        val EXECUTABLE = HORIZONTAL + DIAGONAL + ASCEND + DESCEND
+
         /** 所有移动 */
         val ALL = entries.toList()
     }
@@ -136,8 +139,7 @@ object MovementCostCalculator {
 
         // 中间位置需要可行走
         if (!canWalkOn(level, stepOn)) {
-            // 检查是否可以掉落
-            return fallCost(level, from, move)
+            return ActionCosts.COST_INF
         }
 
         val to = from.offset(move.dx, move.dy, move.dz)
