@@ -7,12 +7,12 @@ A Minecraft Fabric mod that brings LLM-powered AI agents into your game. Send na
 ## Features
 
 - **Natural Language Control** — Tell bots what to do in plain language, LLM plans the actions
-- **20+ Built-in Tools** — Movement, mining, building, combat, inventory, crafting, riding, etc.
-- **A* Pathfinding** — Auto-navigation avoiding obstacles and hazards
+- **20+ Built-in Tools** — Movement, mining, building, combat, inventory, debug item provisioning, riding, etc.
+- **A* Pathfinding** — Auto-navigation with executable movement steps and position feedback
 - **Smart Behaviors** — Self-preservation (low health/lava/drowning), auto-combat, unstuck detection
 - **World Perception** — Bots understand surroundings: blocks, entities, terrain, crosshair targets
 - **Pronoun Resolution** — "我面前的方块" = your crosshair target, "你面前的方块" = bot's crosshair target
-- **File-based Task Plans** — Complex tasks decomposed into JSON plans, editable and resumable
+- **File-based Task Plans** — Complex tasks decomposed into JSON plans, editable, retryable, and resumable per bot
 - **Conversation Memory** — Per-bot chat history with automatic summarization
 - **OpenAI-Compatible API** — Works with DeepSeek, OpenAI, or any compatible endpoint
 
@@ -93,7 +93,7 @@ All commands go through LLM for intelligent planning:
 Complex tasks are decomposed into JSON plan files:
 ```
 /ai plan              — List all plan files
-/ai plan resume <file> — Resume a paused plan
+/ai plan resume <bot> <file> — Resume a paused plan for a bot
 ```
 
 ### Runtime Config
@@ -109,7 +109,7 @@ Complex tasks are decomposed into JSON plan files:
 
 | Tool | Description |
 |------|-------------|
-| `moveTo(x, y, z)` | A* pathfind to coordinates |
+| `moveTo(x, y, z)` | A* pathfind to coordinates; executes reachable movement steps and verifies bot position |
 | `move(direction, ticks)` | Directional movement (forward/backward/left/right) |
 | `look(direction)` | Look direction (north/south/east/west/up/down/at x y z) |
 | `turn(direction)` | Relative turn (left/right/back) |
@@ -117,9 +117,9 @@ Complex tasks are decomposed into JSON plan files:
 | `attack()` | Attack (once/continuous/interval) |
 | `use()` | Use item (once/continuous/interval) |
 | `sneak()` / `sprint()` | Toggle sneak/sprint |
-| `mineBlock(x, y, z)` | Walk to and mine a block |
-| `placeBlock(x, y, z, block)` | Place a block |
-| `craft(item)` | Craft an item |
+| `mineBlock(x, y, z)` | Walk to and mine a block; reports failure if the block is not broken |
+| `placeBlock(x, y, z, block)` | Prepare the block in main hand, click a support face, and verify placement |
+| `craft(item)` | Debug-provision an item with a server command; does not consume recipe ingredients yet |
 | `drop(slot)` | Drop items |
 | `hotbar(slot)` | Switch hotbar slot |
 | `swapHands()` | Swap main/offhand |
@@ -144,13 +144,15 @@ Player → /ai command → TaskPlanner
 ```
 
 - **TaskPlanner** — LLM-based task decomposition, file-based plan management, retry logic
-- **ActionExecutor** — Maps tool calls to Carpet `/player` commands
+- **ActionExecutor** — Maps tool calls to Carpet `/player` commands, prepares block placement, and verifies action results
 - **WorldPerception** — Gathers world state + crosshair targets (bot + sender)
 - **BehaviorModes** — Autonomous survival behaviors via Carpet commands
-- **AStarPathfinder** — A* with 18 movement types, timeout, mob avoidance
+- **AStarPathfinder** — A* with executable movement steps, timeout, mob avoidance
 - **BlockClassifier** — Block type classification for pathfinding
 - **LLMClient** — Streaming OpenAI-compatible client with thinking extraction
 - **TaskPlanManager** — JSON plan persistence, recovery, and progress tracking
+- **GameThreadDispatcher** — Keeps Minecraft world and command operations on the server thread
+- **ActionResultClassifier** — Centralizes action failure detection across execution paths
 
 ## License
 

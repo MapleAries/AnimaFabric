@@ -7,12 +7,12 @@
 ## 特性
 
 - **自然语言控制** — 用日常语言告诉假人该做什么，LLM 自动规划行动
-- **20+ 内置工具** — 移动、挖掘、建造、战斗、背包、合成、骑乘等
-- **A* 寻路** — 自动导航，避开障碍物和危险地形
+- **20+ 内置工具** — 移动、挖掘、建造、战斗、背包、调试物品给予、骑乘等
+- **A* 寻路** — 自动导航，按可执行移动步骤行走，并用位置反馈确认到位
 - **智能行为** — 自我保护（低血量/岩浆/溺水）、自动反击、卡住脱困
 - **世界感知** — 假人理解周围环境：方块、实体、地形、准星目标
 - **代词解析** — "我面前的方块" = 你的准星目标，"你面前的方块" = 假人的准星目标
-- **文件化任务计划** — 复杂任务分解为 JSON 计划文件，可编辑、可恢复
+- **文件化任务计划** — 复杂任务分解为 JSON 计划文件，可编辑、可重试、可按假人恢复
 - **对话记忆** — 每个假人独立的聊天历史，超长自动摘要
 - **兼容 OpenAI API** — 支持 DeepSeek、OpenAI 或任意兼容接口
 
@@ -94,7 +94,7 @@ Carpet 负责假人生成。用 `/gamemode creative Steve` 切换游戏模式。
 复杂任务会自动分解为 JSON 计划文件：
 ```
 /ai plan              — 列出所有计划文件
-/ai plan resume <file> — 恢复执行暂停的计划
+/ai plan resume <假人名> <文件名> — 为指定假人恢复执行暂停的计划
 ```
 
 ### 运行时配置
@@ -110,7 +110,7 @@ Carpet 负责假人生成。用 `/gamemode creative Steve` 切换游戏模式。
 
 | 工具 | 说明 |
 |------|------|
-| `moveTo(x, y, z)` | A* 寻路移动到指定坐标 |
+| `moveTo(x, y, z)` | A* 寻路移动到指定坐标，按可执行移动步骤行走并验证位置 |
 | `move(direction, ticks)` | 方向移动（forward/backward/left/right） |
 | `look(direction)` | 看向（north/south/east/west/up/down/at x y z） |
 | `turn(direction)` | 相对转向（left/right/back） |
@@ -118,9 +118,9 @@ Carpet 负责假人生成。用 `/gamemode creative Steve` 切换游戏模式。
 | `attack()` | 攻击（once/continuous/interval） |
 | `use()` | 使用物品（once/continuous/interval） |
 | `sneak()` / `sprint()` | 切换潜行/冲刺 |
-| `mineBlock(x, y, z)` | 走向并挖掘方块 |
-| `placeBlock(x, y, z, block)` | 放置方块 |
-| `craft(item)` | 合成物品 |
+| `mineBlock(x, y, z)` | 走向并挖掘方块；方块未破坏会返回失败 |
+| `placeBlock(x, y, z, block)` | 自动把方块准备到主手，点击支撑面，并验证放置结果 |
+| `craft(item)` | 调试模式给予物品；当前不会消耗材料进行真实配方合成 |
 | `drop(slot)` | 丢出物品 |
 | `hotbar(slot)` | 切换快捷栏 |
 | `swapHands()` | 交换主副手 |
@@ -145,13 +145,15 @@ Carpet 负责假人生成。用 `/gamemode creative Steve` 切换游戏模式。
 ```
 
 - **TaskPlanner** — LLM 任务分解、文件化计划管理、重试逻辑
-- **ActionExecutor** — 将工具调用映射为 Carpet `/player` 命令
+- **ActionExecutor** — 将工具调用映射为 Carpet `/player` 命令，准备方块放置并验证动作结果
 - **WorldPerception** — 采集世界状态 + 准星目标（假人 + 发送者）
 - **BehaviorModes** — 通过 Carpet 命令实现自主生存行为
-- **AStarPathfinder** — 18 种移动类型的 A* 寻路、超时机制、生物回避
+- **AStarPathfinder** — 带可执行移动步骤的 A* 寻路、超时机制、生物回避
 - **BlockClassifier** — 方块类型分类系统
 - **LLMClient** — 流式 OpenAI 兼容客户端，支持思考内容提取
 - **TaskPlanManager** — JSON 计划持久化、恢复和进度追踪
+- **GameThreadDispatcher** — 确保 Minecraft 世界访问和命令执行回到服务器线程
+- **ActionResultClassifier** — 统一各执行路径的动作失败判定
 
 ## 许可证
 
