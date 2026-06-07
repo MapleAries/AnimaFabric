@@ -14,7 +14,8 @@ data class AnimaFabricConfig(
     val maxTokens: Int = 2048,
     val timeout: Long = 300,
     val maxHistoryTurns: Int = 10,
-    val maxRetries: Int = 3
+    val maxRetries: Int = 3,
+    val requiredPermissionLevel: Int = 2
 ) {
     companion object {
         private val CONFIG_PATH: Path = FabricLoader.getInstance().configDir.resolve("anima-fabric.json")

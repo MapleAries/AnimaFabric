@@ -5,6 +5,7 @@ import com.maple.config.AnimaFabricConfig
 import com.maple.entity.FakePlayerManager
 import com.maple.locate.StructureLocator
 import com.mojang.brigadier.Command
+import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
@@ -34,7 +35,7 @@ object AICommand {
         CommandRegistrationCallback.EVENT.register { dispatcher, _, _ ->
             dispatcher.register(
                 Commands.literal("anima")
-                    .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                    .requires { hasConfiguredPermission(it) }
                     .then(Commands.literal("stop")
                         .then(Commands.argument("name", StringArgumentType.word())
                             .executes { stopBot(it) }
@@ -90,6 +91,11 @@ object AICommand {
                                 .executes { setConfigModel(it) }
                             )
                         )
+                        .then(Commands.literal("permission")
+                            .then(Commands.argument("level", IntegerArgumentType.integer(0, 4))
+                                .executes { setConfigPermission(it) }
+                            )
+                        )
                     )
                     .then(Commands.argument("name", StringArgumentType.word())
                         .then(Commands.argument("command", StringArgumentType.greedyString())
@@ -98,6 +104,17 @@ object AICommand {
                     )
             )
         }
+    }
+
+    private fun hasConfiguredPermission(source: CommandSourceStack): Boolean {
+        val permissionCheck = when ((config?.requiredPermissionLevel ?: 2).coerceIn(0, 4)) {
+            0 -> Commands.LEVEL_ALL
+            1 -> Commands.LEVEL_MODERATORS
+            2 -> Commands.LEVEL_GAMEMASTERS
+            3 -> Commands.LEVEL_ADMINS
+            else -> Commands.LEVEL_OWNERS
+        }
+        return Commands.hasPermission<CommandSourceStack>(permissionCheck).test(source)
     }
 
     private fun sendCommand(context: CommandContext<CommandSourceStack>): Int {
@@ -363,6 +380,18 @@ object AICommand {
         updateConfig(newConfig)
         context.source.sendSuccess({
             Component.literal("模型已设置为: $value")
+        }, true)
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun setConfigPermission(context: CommandContext<CommandSourceStack>): Int {
+        val value = IntegerArgumentType.getInteger(context, "level")
+        val cfg = config ?: return 0
+        val newConfig = cfg.copy(requiredPermissionLevel = value)
+        newConfig.save()
+        updateConfig(newConfig)
+        context.source.sendSuccess({
+            Component.literal("Anima permission level set to: $value")
         }, true)
         return Command.SINGLE_SUCCESS
     }
