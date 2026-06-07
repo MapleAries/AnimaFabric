@@ -18,6 +18,7 @@ data class AnimaFabricConfig(
     val requiredPermissionLevel: Int = 2
 ) {
     companion object {
+        const val API_KEY_ENV = "ANIMA_FABRIC_API_KEY"
         private val CONFIG_PATH: Path = FabricLoader.getInstance().configDir.resolve("anima-fabric.json")
         private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
@@ -43,5 +44,13 @@ data class AnimaFabricConfig(
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    fun effectiveApiKey(): String {
+        return System.getenv(API_KEY_ENV)?.takeIf { it.isNotBlank() } ?: apiKey
+    }
+
+    fun isApiKeyFromEnvironment(): Boolean {
+        return !System.getenv(API_KEY_ENV).isNullOrBlank()
     }
 }

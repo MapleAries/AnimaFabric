@@ -338,7 +338,7 @@ object AICommand {
             Component.literal("""
                 === 织灵配置 ===
                 API URL: ${cfg.apiUrl}
-                API Key: ${cfg.apiKey.take(8)}...${cfg.apiKey.takeLast(4)}
+                API Key: ${formatApiKey(cfg)}
                 模型: ${cfg.model}
                 最大 Token: ${cfg.maxTokens}
                 超时: ${cfg.timeout}秒
@@ -370,6 +370,23 @@ object AICommand {
             Component.literal("API Key 已设置为: ${value.take(8)}...${value.takeLast(4)}")
         }, true)
         return Command.SINGLE_SUCCESS
+    }
+
+    private fun formatApiKey(cfg: AnimaFabricConfig): String {
+        val key = cfg.effectiveApiKey()
+        if (key.isBlank()) return "<not set>"
+
+        val masked = when {
+            key.length <= 8 -> "****"
+            key.length <= 12 -> "${key.take(4)}...${key.takeLast(2)}"
+            else -> "${key.take(8)}...${key.takeLast(4)}"
+        }
+
+        return if (cfg.isApiKeyFromEnvironment()) {
+            "$masked (from ${AnimaFabricConfig.API_KEY_ENV})"
+        } else {
+            masked
+        }
     }
 
     private fun setConfigModel(context: CommandContext<CommandSourceStack>): Int {

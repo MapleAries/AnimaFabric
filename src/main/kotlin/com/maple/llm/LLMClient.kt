@@ -60,7 +60,7 @@ class LLMClient(private val config: AnimaFabricConfig) {
                 val httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(config.apiUrl))
                     .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer ${config.apiKey}")
+                    .header("Authorization", "Bearer ${config.effectiveApiKey()}")
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .timeout(Duration.ofSeconds(config.timeout * 2))
                     .build()
