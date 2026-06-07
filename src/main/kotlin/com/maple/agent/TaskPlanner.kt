@@ -373,7 +373,7 @@ $worldState
      */
     private fun parseSteps(content: String): List<TaskStep> {
         val steps = mutableListOf<TaskStep>()
-        val commandPattern = Regex("""!(\w+)\([^)]*\)""")
+        val commandPattern = Regex("""!(\w+)\(([^)]*)\)""")
         val typePattern = Regex("""\w+:\s*(string|number|boolean)""")
         val nameOnlyPattern = Regex("""^[a-zA-Z_]+$""")
 
