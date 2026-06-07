@@ -5,6 +5,7 @@ import com.maple.config.AnimaFabricConfig
 import com.maple.entity.FakePlayerManager
 import com.maple.locate.StructureLocator
 import com.mojang.brigadier.Command
+import com.mojang.brigadier.arguments.BoolArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
@@ -94,6 +95,16 @@ object AICommand {
                         .then(Commands.literal("permission")
                             .then(Commands.argument("level", IntegerArgumentType.integer(0, 4))
                                 .executes { setConfigPermission(it) }
+                            )
+                        )
+                        .then(Commands.literal("driver")
+                            .then(Commands.argument("value", StringArgumentType.word())
+                                .executes { setConfigDriver(it) }
+                            )
+                        )
+                        .then(Commands.literal("adminTools")
+                            .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                .executes { setConfigAdminTools(it) }
                             )
                         )
                     )
@@ -343,6 +354,8 @@ object AICommand {
                 最大 Token: ${cfg.maxTokens}
                 超时: ${cfg.timeout}秒
                 历史轮数: ${cfg.maxHistoryTurns}
+                Action Driver: ${cfg.actionDriver}
+                Admin Tools: ${cfg.allowAdminTools}
             """.trimIndent())
         }, false)
         return Command.SINGLE_SUCCESS
@@ -409,6 +422,35 @@ object AICommand {
         updateConfig(newConfig)
         context.source.sendSuccess({
             Component.literal("Anima permission level set to: $value")
+        }, true)
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun setConfigDriver(context: CommandContext<CommandSourceStack>): Int {
+        val value = StringArgumentType.getString(context, "value").lowercase()
+        if (value !in setOf("carpet", "native")) {
+            context.source.sendFailure(Component.literal("Invalid action driver: $value (expected carpet or native)"))
+            return 0
+        }
+
+        val cfg = config ?: return 0
+        val newConfig = cfg.copy(actionDriver = value)
+        newConfig.save()
+        updateConfig(newConfig)
+        context.source.sendSuccess({
+            Component.literal("Anima action driver set to: $value")
+        }, true)
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun setConfigAdminTools(context: CommandContext<CommandSourceStack>): Int {
+        val value = BoolArgumentType.getBool(context, "enabled")
+        val cfg = config ?: return 0
+        val newConfig = cfg.copy(allowAdminTools = value)
+        newConfig.save()
+        updateConfig(newConfig)
+        context.source.sendSuccess({
+            Component.literal("Anima admin tools enabled: $value")
         }, true)
         return Command.SINGLE_SUCCESS
     }

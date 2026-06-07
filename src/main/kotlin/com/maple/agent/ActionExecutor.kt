@@ -1,5 +1,6 @@
 package com.maple.agent
 
+import com.maple.config.AnimaFabricConfig
 import com.maple.entity.FakePlayerManager
 import com.maple.locate.StructureLocator
 import com.maple.pathfinding.AStarPathfinder
@@ -11,7 +12,17 @@ import net.minecraft.core.registries.BuiltInRegistries
  * 工具执行器 - 通过 Carpet /player 命令控制 bot。
  * 完整支持 Carpet 的所有 player 子命令。
  */
-class ActionExecutor(private val botName: String, private val server: net.minecraft.server.MinecraftServer) {
+class ActionExecutor(
+    private val botName: String,
+    private val server: net.minecraft.server.MinecraftServer,
+    config: AnimaFabricConfig
+) {
+    private val driver = ActionDriverFactory.create(
+        config.actionDriver,
+        botName,
+        server,
+        config.allowAdminTools
+    )
 
     /**
      * 执行单个工具调用，返回执行结果。
@@ -86,30 +97,11 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
      * 通过 Carpet 的 /player 命令执行操作。
      */
     private suspend fun executeCarpetCommand(command: String): Boolean {
-        return GameThreadDispatcher.runOnGameThread(server) {
-            try {
-                val fullCommand = "/player $botName $command"
-                println("[AnimaFabric] 执行 carpet 命令: $fullCommand")
-                server.commands.performPrefixedCommand(server.createCommandSourceStack(), fullCommand)
-                true
-            } catch (e: Exception) {
-                println("[AnimaFabric] carpet 命令执行异常: ${e.message}")
-                false
-            }
-        }
+        return driver.playerCommand(command)
     }
 
     private suspend fun executeServerCommand(command: String): Boolean {
-        return GameThreadDispatcher.runOnGameThread(server) {
-            try {
-                println("[AnimaFabric] 执行服务器命令: $command")
-                server.commands.performPrefixedCommand(server.createCommandSourceStack(), command)
-                true
-            } catch (e: Exception) {
-                println("[AnimaFabric] 服务器命令执行异常: ${e.message}")
-                false
-            }
-        }
+        return driver.adminCommand(command)
     }
 
     private fun getIntParam(params: Map<String, Any>, key: String): Int? {

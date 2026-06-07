@@ -15,7 +15,9 @@ data class AnimaFabricConfig(
     val timeout: Long = 300,
     val maxHistoryTurns: Int = 10,
     val maxRetries: Int = 3,
-    val requiredPermissionLevel: Int = 2
+    val requiredPermissionLevel: Int = 2,
+    val actionDriver: String = "carpet",
+    val allowAdminTools: Boolean = true
 ) {
     companion object {
         const val API_KEY_ENV = "ANIMA_FABRIC_API_KEY"

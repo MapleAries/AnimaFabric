@@ -60,9 +60,10 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
             try {
                 memory.addUserMessage(command)
                 println("[AnimaFabric] 指令交给 TaskPlanner 处理: $command (发送者: ${sender?.name?.string ?: "控制台"})")
-                val actionExecutor = ActionExecutor(botName, server)
+                val currentConfig = config
+                val actionExecutor = ActionExecutor(botName, server, currentConfig)
                 val taskPlanner = TaskPlanner(botName, server, llmClient, actionExecutor, sender)
-                val result = withTimeout(config.timeout * 2000) {
+                val result = withTimeout(currentConfig.timeout * 2000) {
                     taskPlanner.processTask(command)
                 }
                 memory.addAssistantMessage(result)
@@ -147,7 +148,7 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
             try {
                 val currentConfig = config
                 val currentClient = llmClient
-                val actionExecutor = ActionExecutor(botName, server)
+                val actionExecutor = ActionExecutor(botName, server, currentConfig)
                 val taskPlanner = TaskPlanner(botName, server, currentClient, actionExecutor)
                 val result = withTimeout(currentConfig.timeout * 2000) {
                     taskPlanner.resumePlan(planPath)
