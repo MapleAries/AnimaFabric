@@ -44,6 +44,12 @@ dependencies {
 	implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 	// Carpet mod for bot control
 	implementation(files("libs/fabric-carpet-26.1+v260402.jar"))
+
+	testImplementation(kotlin("test"))
+}
+
+tasks.test {
+	useJUnitPlatform()
 }
 
 tasks.processResources {

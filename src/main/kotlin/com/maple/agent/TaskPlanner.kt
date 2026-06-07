@@ -226,7 +226,7 @@ class TaskPlanner(
 
         val toolName = match.groupValues[1]
         val paramsStr = match.groupValues[2]
-        val params = parseParams(paramsStr)
+        val params = CommandParser.parsePositionalParams(paramsStr)
 
         return actionExecutor.execute(toolName, params)
     }
@@ -373,21 +373,7 @@ $worldState
      */
     private fun parseSteps(content: String): List<TaskStep> {
         val steps = mutableListOf<TaskStep>()
-        val commandPattern = Regex("""!(\w+)\(([^)]*)\)""")
-        val typePattern = Regex("""\w+:\s*(string|number|boolean)""")
-        val nameOnlyPattern = Regex("""^[a-zA-Z_]+$""")
-
-        val commands = commandPattern.findAll(content)
-            .filter { match ->
-                val args = match.groupValues.getOrElse(2) { "" }.trim()
-                if (args.isEmpty()) return@filter true
-                if (typePattern.containsMatchIn(args)) return@filter false
-                val parts = args.split(",").map { it.trim() }
-                val allNames = parts.all { it.isNotEmpty() && nameOnlyPattern.matches(it) }
-                !allNames
-            }
-            .map { it.value }
-            .toList()
+        val commands = CommandParser.extractExecutableCommands(content)
 
         for (cmd in commands) {
             val toolName = Regex("""!(\w+)""").find(cmd)?.groupValues?.get(1) ?: "执行"
@@ -421,24 +407,6 @@ $worldState
         }
     }
 
-    private fun parseParams(paramsStr: String): Map<String, Any> {
-        val params = mutableMapOf<String, Any>()
-        if (paramsStr.isBlank()) return params
-
-        val parts = paramsStr.split(",").map { it.trim() }
-        for ((index, part) in parts.withIndex()) {
-            val value = when {
-                part.equals("true", ignoreCase = true) -> true
-                part.equals("false", ignoreCase = true) -> false
-                part.toDoubleOrNull() != null -> part.toDouble()
-                part.startsWith("\"") && part.endsWith("\"") -> part.substring(1, part.length - 1)
-                else -> part
-            }
-            params["param$index"] = value
-        }
-
-        return params
-    }
 }
 
 /**

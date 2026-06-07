@@ -223,7 +223,7 @@ class PipelineExecutor(
         for (match in matches) {
             val toolName = match.groupValues[1]
             val paramsStr = match.groupValues[2]
-            val params = parseParams(paramsStr)
+            val params = CommandParser.parsePositionalParams(paramsStr)
             commands.add(ParsedCommand(toolName, params))
 
             // 从消息中移除命令部分
@@ -274,28 +274,6 @@ class PipelineExecutor(
         }
 
         return ParsedResponse.Success(response, emptyList())
-    }
-
-    /**
-     * 解析命令参数。
-     */
-    private fun parseParams(paramsStr: String): Map<String, Any> {
-        val params = mutableMapOf<String, Any>()
-        if (paramsStr.isBlank()) return params
-
-        val parts = paramsStr.split(",").map { it.trim() }
-        for ((index, part) in parts.withIndex()) {
-            val value = when {
-                part.equals("true", ignoreCase = true) -> true
-                part.equals("false", ignoreCase = true) -> false
-                part.toDoubleOrNull() != null -> part.toDouble()
-                part.startsWith("\"") && part.endsWith("\"") -> part.substring(1, part.length - 1)
-                else -> part
-            }
-            params["param$index"] = value
-        }
-
-        return params
     }
 
     /**
