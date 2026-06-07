@@ -67,6 +67,37 @@ object ToolRegistry {
             parameters = emptyList()
         ),
         Tool(
+            name = "equipItem",
+            description = "Equip an item in the bot's main hand.",
+            parameters = listOf(
+                ToolParameter("item", "string", "Item id or common item name")
+            )
+        ),
+        Tool(
+            name = "useItem",
+            description = "Use the specified item, or the current main hand item if no item is provided.",
+            parameters = listOf(
+                ToolParameter("item", "string", "Item id or common item name", required = false)
+            )
+        ),
+        Tool(
+            name = "useItemOnBlock",
+            description = "Equip an item, look at a block, and use the item on that block.",
+            parameters = listOf(
+                ToolParameter("item", "string", "Item id or common item name"),
+                ToolParameter("x", "number", "Target block X"),
+                ToolParameter("y", "number", "Target block Y"),
+                ToolParameter("z", "number", "Target block Z")
+            )
+        ),
+        Tool(
+            name = "eatFood",
+            description = "Equip and eat a food item. Defaults to bread.",
+            parameters = listOf(
+                ToolParameter("item", "string", "Food item name", required = false)
+            )
+        ),
+        Tool(
             name = "mineBlock",
             description = "挖掘指定坐标的方块。距离必须≤6格，否则先用moveTo靠近。",
             parameters = listOf(
@@ -86,6 +117,50 @@ object ToolRegistry {
                 ToolParameter("block", "string", "方块类型（如 oak_planks, cobblestone）")
             ),
             stateKeys = listOf("placeBlock_result")
+        ),
+        Tool(
+            name = "findNearbyBlock",
+            description = "Find nearby blocks of a given type and return their coordinates.",
+            parameters = listOf(
+                ToolParameter("block", "string", "Block id or common block name"),
+                ToolParameter("radius", "number", "Search radius, default 8", required = false)
+            ),
+            stateKeys = listOf("nearby_block")
+        ),
+        Tool(
+            name = "findPortalFrame",
+            description = "Find nearby end portal frame blocks.",
+            parameters = listOf(
+                ToolParameter("radius", "number", "Search radius, default 16", required = false)
+            ),
+            stateKeys = listOf("portal_frame")
+        ),
+        Tool(
+            name = "buildNetherPortal",
+            description = "Build a 4x5 obsidian nether portal frame. Axis x means width along X, axis z means width along Z.",
+            parameters = listOf(
+                ToolParameter("x", "number", "Frame lower-left X"),
+                ToolParameter("y", "number", "Frame lower-left Y"),
+                ToolParameter("z", "number", "Frame lower-left Z"),
+                ToolParameter("axis", "string", "x or z, default x", required = false)
+            )
+        ),
+        Tool(
+            name = "ignitePortal",
+            description = "Ignite a nether portal frame built by buildNetherPortal.",
+            parameters = listOf(
+                ToolParameter("x", "number", "Frame lower-left X"),
+                ToolParameter("y", "number", "Frame lower-left Y"),
+                ToolParameter("z", "number", "Frame lower-left Z"),
+                ToolParameter("axis", "string", "x or z, default x", required = false)
+            )
+        ),
+        Tool(
+            name = "enterPortal",
+            description = "Move into the nearest nether portal block.",
+            parameters = listOf(
+                ToolParameter("radius", "number", "Search radius, default 8", required = false)
+            )
         ),
         Tool(
             name = "getInventory",

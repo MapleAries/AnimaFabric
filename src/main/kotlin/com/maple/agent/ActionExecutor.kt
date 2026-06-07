@@ -51,8 +51,17 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             "jump" -> executeJump(params)
             "attack" -> executeAttack(params)
             "use" -> executeUse(params)
+            "equipItem" -> executeEquipItem(params)
+            "useItem" -> executeUseItem(params)
+            "useItemOnBlock" -> executeUseItemOnBlock(params)
+            "eatFood" -> executeEatFood(params)
             "mineBlock" -> executeMineBlock(params)
             "placeBlock" -> executePlaceBlock(params)
+            "findNearbyBlock" -> executeFindNearbyBlock(params)
+            "findPortalFrame" -> executeFindPortalFrame(params)
+            "buildNetherPortal" -> executeBuildNetherPortal(params)
+            "ignitePortal" -> executeIgnitePortal(params)
+            "enterPortal" -> executeEnterPortal(params)
             "getInventory" -> executeGetInventory()
             "getHealth" -> executeGetHealth()
             "getHunger" -> executeGetHunger()
@@ -135,6 +144,11 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             "torch" to "minecraft:torch",
             "chest" to "minecraft:chest",
             "bread" to "minecraft:bread",
+            "cooked_beef" to "minecraft:cooked_beef",
+            "cooked_porkchop" to "minecraft:cooked_porkchop",
+            "flint_and_steel" to "minecraft:flint_and_steel",
+            "obsidian" to "minecraft:obsidian",
+            "ender_eye" to "minecraft:ender_eye",
             "iron_ingot" to "minecraft:iron_ingot",
             "gold_ingot" to "minecraft:gold_ingot",
             "diamond" to "minecraft:diamond",
@@ -370,6 +384,63 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         return "已使用物品"
     }
 
+    private suspend fun executeEquipItem(params: Map<String, Any>): String {
+        val item = getStringParam(params, "item") ?: return "Missing parameter: item"
+        val itemId = resolveItemId(item)
+        return if (ensureMainHandItem(itemId)) {
+            "Equipped $itemId in main hand"
+        } else {
+            "Failed to equip $itemId"
+        }
+    }
+
+    private suspend fun executeUseItem(params: Map<String, Any>): String {
+        val item = getStringParam(params, "item")
+        if (item != null && !ensureMainHandItem(resolveItemId(item))) {
+            return "Failed to equip ${resolveItemId(item)}"
+        }
+        executeCarpetCommand("use")
+        return if (item != null) "Used $item" else "Used main hand item"
+    }
+
+    private suspend fun executeUseItemOnBlock(params: Map<String, Any>): String {
+        val item = getStringParam(params, "item") ?: return "Missing parameter: item"
+        val x = getIntParam(params, "x") ?: return "Missing parameter: x"
+        val y = getIntParam(params, "y") ?: return "Missing parameter: y"
+        val z = getIntParam(params, "z") ?: return "Missing parameter: z"
+        val itemId = resolveItemId(item)
+
+        if (!ensureMainHandItem(itemId)) {
+            return "Failed to equip $itemId"
+        }
+
+        executeCarpetCommand("look at $x $y $z")
+        executeCarpetCommand("use")
+        return "Used $itemId on block ($x, $y, $z)"
+    }
+
+    private suspend fun executeEatFood(params: Map<String, Any>): String {
+        val food = getStringParam(params, "item") ?: "bread"
+        val itemId = resolveItemId(food)
+        if (!ensureMainHandItem(itemId)) {
+            return "Failed to equip food item $itemId"
+        }
+
+        val before = GameThreadDispatcher.runOnGameThread(server) {
+            server.playerList.getPlayerByName(botName)?.foodData?.foodLevel
+        } ?: return "Bot does not exist"
+
+        executeCarpetCommand("use continuous")
+        kotlinx.coroutines.delay(1800)
+        executeCarpetCommand("stop")
+
+        val after = GameThreadDispatcher.runOnGameThread(server) {
+            server.playerList.getPlayerByName(botName)?.foodData?.foodLevel
+        } ?: return "Bot does not exist"
+
+        return "Ate $itemId (hunger $before -> $after)"
+    }
+
     private suspend fun executeStop(): String {
         executeCarpetCommand("stop")
         return "已停止所有动作"
@@ -539,6 +610,86 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
         }
     }
 
+    private suspend fun executeFindNearbyBlock(params: Map<String, Any>): String {
+        val block = getStringParam(params, "block") ?: return "Missing parameter: block"
+        val radius = (getIntParam(params, "radius") ?: 8).coerceIn(1, 64)
+        val normalized = normalizeBlockId(block)
+
+        val matches = findNearbyBlocks(normalized, radius, limit = 10)
+        if (matches.isEmpty()) return "No $normalized found within radius $radius"
+
+        return matches.joinToString("\n") {
+            "$normalized at (${it.x}, ${it.y}, ${it.z})"
+        }
+    }
+
+    private suspend fun executeFindPortalFrame(params: Map<String, Any>): String {
+        val radius = (getIntParam(params, "radius") ?: 16).coerceIn(1, 64)
+        val frames = findNearbyBlocks("minecraft:end_portal_frame", radius, limit = 20)
+        if (frames.isEmpty()) return "No end portal frame found within radius $radius"
+
+        return frames.joinToString("\n") {
+            "end_portal_frame at (${it.x}, ${it.y}, ${it.z})"
+        }
+    }
+
+    private suspend fun executeBuildNetherPortal(params: Map<String, Any>): String {
+        val x = getIntParam(params, "x") ?: return "Missing parameter: x"
+        val y = getIntParam(params, "y") ?: return "Missing parameter: y"
+        val z = getIntParam(params, "z") ?: return "Missing parameter: z"
+        val axis = getStringParam(params, "axis")?.lowercase() ?: "x"
+        if (axis !in setOf("x", "z")) return "Invalid axis: $axis"
+
+        val origin = BlockPos(x, y, z)
+        for (pos in netherPortalFramePositions(origin, axis)) {
+            if (!executeServerCommand("setblock ${pos.x} ${pos.y} ${pos.z} minecraft:obsidian")) {
+                return "Failed to place obsidian at (${pos.x}, ${pos.y}, ${pos.z})"
+            }
+        }
+        for (pos in netherPortalInnerPositions(origin, axis)) {
+            executeServerCommand("setblock ${pos.x} ${pos.y} ${pos.z} minecraft:air")
+        }
+
+        return "Built nether portal frame at ($x, $y, $z) axis=$axis"
+    }
+
+    private suspend fun executeIgnitePortal(params: Map<String, Any>): String {
+        val x = getIntParam(params, "x") ?: return "Missing parameter: x"
+        val y = getIntParam(params, "y") ?: return "Missing parameter: y"
+        val z = getIntParam(params, "z") ?: return "Missing parameter: z"
+        val axis = getStringParam(params, "axis")?.lowercase() ?: "x"
+        if (axis !in setOf("x", "z")) return "Invalid axis: $axis"
+
+        val origin = BlockPos(x, y, z)
+        val innerBottom = if (axis == "x") origin.offset(1, 1, 0) else origin.offset(0, 1, 1)
+
+        ensureMainHandItem("minecraft:flint_and_steel")
+        executeCarpetCommand("look at ${innerBottom.x} ${innerBottom.y} ${innerBottom.z}")
+        executeCarpetCommand("use")
+        kotlinx.coroutines.delay(500)
+
+        val activated = GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread false
+            netherPortalInnerPositions(origin, axis).any {
+                blockId(bot.level().getBlockState(it).block) == "minecraft:nether_portal"
+            }
+        }
+        if (activated) return "Ignited nether portal at ($x, $y, $z)"
+
+        executeServerCommand("setblock ${innerBottom.x} ${innerBottom.y} ${innerBottom.z} minecraft:fire")
+        return "Attempted to ignite nether portal at ($x, $y, $z)"
+    }
+
+    private suspend fun executeEnterPortal(params: Map<String, Any>): String {
+        val radius = (getIntParam(params, "radius") ?: 8).coerceIn(1, 32)
+        val portalPos = findNearestBlock("minecraft:nether_portal", radius)
+            ?: return "No nether portal found within radius $radius"
+
+        val moveResult = executeMoveTo(mapOf("x" to portalPos.x, "y" to portalPos.y, "z" to portalPos.z))
+        kotlinx.coroutines.delay(4000)
+        return "Entered or moved into nearest nether portal at (${portalPos.x}, ${portalPos.y}, ${portalPos.z}): $moveResult"
+    }
+
     private suspend fun resolvePlacementTarget(requestedPos: BlockPos): Pair<BlockPos, BlockPos>? {
         return GameThreadDispatcher.runOnGameThread(server) {
             val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
@@ -584,6 +735,67 @@ class ActionExecutor(private val botName: String, private val server: net.minecr
             targetPos.west(),
             targetPos.above()
         ).firstOrNull { !level.getBlockState(it).isAir }
+    }
+
+    private fun normalizeBlockId(block: String): String {
+        val normalized = block.lowercase()
+            .replace(' ', '_')
+            .removePrefix("minecraft:")
+        return "minecraft:$normalized"
+    }
+
+    private fun blockId(block: net.minecraft.world.level.block.Block): String {
+        return BuiltInRegistries.BLOCK.getKey(block).toString()
+    }
+
+    private suspend fun findNearestBlock(block: String, radius: Int): BlockPos? {
+        return findNearbyBlocks(block, radius, limit = 1).firstOrNull()
+    }
+
+    private suspend fun findNearbyBlocks(block: String, radius: Int, limit: Int): List<BlockPos> {
+        val targetId = normalizeBlockId(block)
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread emptyList()
+            val level = bot.level()
+            val center = bot.blockPosition()
+            val matches = mutableListOf<BlockPos>()
+
+            for (dx in -radius..radius) {
+                for (dy in -radius..radius) {
+                    for (dz in -radius..radius) {
+                        val pos = center.offset(dx, dy, dz)
+                        if (blockId(level.getBlockState(pos).block) == targetId) {
+                            matches.add(pos)
+                        }
+                    }
+                }
+            }
+
+            matches.sortedBy { it.distSqr(center) }.take(limit)
+        }
+    }
+
+    private fun netherPortalFramePositions(origin: BlockPos, axis: String): List<BlockPos> {
+        val positions = mutableListOf<BlockPos>()
+        for (width in 0..3) {
+            for (height in 0..4) {
+                val isFrame = width == 0 || width == 3 || height == 0 || height == 4
+                if (isFrame) {
+                    positions.add(if (axis == "x") origin.offset(width, height, 0) else origin.offset(0, height, width))
+                }
+            }
+        }
+        return positions
+    }
+
+    private fun netherPortalInnerPositions(origin: BlockPos, axis: String): List<BlockPos> {
+        val positions = mutableListOf<BlockPos>()
+        for (width in 1..2) {
+            for (height in 1..3) {
+                positions.add(if (axis == "x") origin.offset(width, height, 0) else origin.offset(0, height, width))
+            }
+        }
+        return positions
     }
 
     private suspend fun waitForPlacedBlock(targetPos: BlockPos): String? {

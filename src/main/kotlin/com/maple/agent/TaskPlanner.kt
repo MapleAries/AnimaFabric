@@ -296,6 +296,9 @@ class TaskPlanner(
 !moveTo(x,y,z) !move(dir,n) !turn(dir) !jump() !sneak()
 !mineBlock(x,y,z) !placeBlock(x,y,z,block) !craft(item)
 !scanArea(r) !locateStructure(structure,radius) !getInventory() !attack() !use() !sendMessage(text)
+!equipItem(item) !useItem(item) !useItemOnBlock(item,x,y,z) !eatFood(item)
+!findNearbyBlock(block,radius) !findPortalFrame(radius)
+!buildNetherPortal(x,y,z,axis) !ignitePortal(x,y,z,axis) !enterPortal(radius)
 
 重要规则：
 1. 每个命令只出现一次，不要重复
