@@ -34,6 +34,7 @@ object AICommand {
         CommandRegistrationCallback.EVENT.register { dispatcher, _, _ ->
             dispatcher.register(
                 Commands.literal("anima")
+                    .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                     .then(Commands.literal("stop")
                         .then(Commands.argument("name", StringArgumentType.word())
                             .executes { stopBot(it) }
