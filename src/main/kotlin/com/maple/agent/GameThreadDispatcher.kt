@@ -25,7 +25,14 @@ object GameThreadDispatcher {
                 }
             }, server)
 
+            continuation.invokeOnCancellation {
+                future.cancel(false)
+            }
+
             future.whenComplete { result, error ->
+                if (!continuation.isActive) {
+                    return@whenComplete
+                }
                 if (error != null) {
                     continuation.resumeWithException(error)
                 } else {
