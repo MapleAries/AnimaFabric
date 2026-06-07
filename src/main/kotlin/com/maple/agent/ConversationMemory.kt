@@ -15,16 +15,19 @@ class ConversationMemory(
     private val history = mutableListOf<ChatMessage>()
     private var memory = "" // 总结后的记忆
 
+    @Synchronized
     fun addUserMessage(content: String) {
         history.add(ChatMessage("user", content))
         trimHistory()
     }
 
+    @Synchronized
     fun addAssistantMessage(content: String) {
         history.add(ChatMessage("assistant", content))
         trimHistory()
     }
 
+    @Synchronized
     fun getMessages(): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
 
@@ -37,8 +40,10 @@ class ConversationMemory(
         return messages
     }
 
+    @Synchronized
     fun getMemory(): String = memory
 
+    @Synchronized
     fun clear() {
         history.clear()
         memory = ""
