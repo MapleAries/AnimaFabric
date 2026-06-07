@@ -208,15 +208,13 @@ class LLMClient(private val config: AnimaFabricConfig) {
         val cleaned = THINK_BLOCK_REGEX.replace(text, "").trim()
 
         // 2. 找第一个 { 和最后一个 }
-        val firstBrace = cleaned.indexOf('{')
-        val lastBrace = cleaned.lastIndexOf('}')
+        val jsonStr = JsonExtractor.extractFirstObject(cleaned)
 
-        if (firstBrace == -1 || lastBrace == -1 || firstBrace >= lastBrace) {
+        if (jsonStr == null) {
             logger.warn("[AnimaFabric] 未找到有效的 JSON")
             return ""
         }
 
-        val jsonStr = cleaned.substring(firstBrace, lastBrace + 1)
         logger.info("[AnimaFabric] 提取的 JSON: {}", jsonStr.take(200))
         return jsonStr
     }
@@ -253,6 +251,15 @@ class LLMClient(private val config: AnimaFabricConfig) {
         }
 
         // 方式2：找最后一个完整的 JSON 对象（包含 pipeline 或 tool 或 action）
+        val extractedJson = JsonExtractor.extractLastObjectContaining(
+            thinking,
+            listOf("tool", "pipeline", "action", "goal")
+        )
+        if (extractedJson != null) {
+            logger.info("[AnimaFabric] Extracted JSON from thinking: {}", extractedJson.take(200))
+            return extractedJson
+        }
+
         val lastBrace = thinking.lastIndexOf('}')
         if (lastBrace != -1) {
             var braceCount = 0
