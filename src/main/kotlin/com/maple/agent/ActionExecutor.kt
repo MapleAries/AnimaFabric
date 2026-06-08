@@ -699,11 +699,7 @@ class ActionExecutor(
 
     private suspend fun ensureMainHandItem(itemId: String): Boolean {
         if (isMainHandItem(itemId)) return true
-        if (!executeServerCommand("item replace entity $botName weapon.mainhand with $itemId 1")) {
-            return false
-        }
-        kotlinx.coroutines.delay(100)
-        return isMainHandItem(itemId)
+        return equipExistingInventoryItem(itemId)
     }
 
     private suspend fun isMainHandItem(itemId: String): Boolean {
@@ -711,6 +707,29 @@ class ActionExecutor(
             val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread false
             val stack = bot.mainHandItem
             !stack.isEmpty && BuiltInRegistries.ITEM.getKey(stack.item).toString().equals(itemId, ignoreCase = true)
+        }
+    }
+
+    private suspend fun equipExistingInventoryItem(itemId: String): Boolean {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread false
+            val inventory = bot.inventory
+            val slot = (0 until inventory.containerSize).firstOrNull { index ->
+                val stack = inventory.getItem(index)
+                !stack.isEmpty && BuiltInRegistries.ITEM.getKey(stack.item).toString().equals(itemId, ignoreCase = true)
+            } ?: return@runOnGameThread false
+
+            if (slot in 0..8) {
+                inventory.setSelectedSlot(slot)
+                return@runOnGameThread true
+            }
+
+            val selectedSlot = inventory.getSelectedSlot()
+            val selectedStack = inventory.getItem(selectedSlot)
+            val targetStack = inventory.getItem(slot)
+            inventory.setItem(selectedSlot, targetStack)
+            inventory.setItem(slot, selectedStack)
+            true
         }
     }
 

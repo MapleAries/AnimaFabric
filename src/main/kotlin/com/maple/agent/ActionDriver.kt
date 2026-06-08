@@ -11,6 +11,7 @@ import net.minecraft.network.chat.Component
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.util.Mth
+import net.minecraft.world.level.GameType
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.BlockHitResult
@@ -53,8 +54,10 @@ class CarpetActionDriver(
 
         return GameThreadDispatcher.runOnGameThread(server) {
             try {
+                val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread false
+                if (!canUseAdminCommand(server, bot, command)) return@runOnGameThread false
                 println("[AnimaFabric] Admin action: $command")
-                server.commands.performPrefixedCommand(server.createCommandSourceStack(), command)
+                server.commands.performPrefixedCommand(bot.createCommandSourceStack(), command)
                 true
             } catch (e: Exception) {
                 println("[AnimaFabric] Admin action failed: ${e.message}")
@@ -129,8 +132,10 @@ class NativeActionDriver(
 
         return GameThreadDispatcher.runOnGameThread(server) {
             try {
+                val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread false
+                if (!canUseAdminCommand(server, bot, command)) return@runOnGameThread false
                 println("[AnimaFabric] Admin action: $command")
-                server.commands.performPrefixedCommand(server.createCommandSourceStack(), command)
+                server.commands.performPrefixedCommand(bot.createCommandSourceStack(), command)
                 true
             } catch (e: Exception) {
                 println("[AnimaFabric] Admin action failed: ${e.message}")
@@ -434,6 +439,18 @@ class NativeActionDriver(
             continuousActions.remove(botName)?.cancel()
         }
     }
+}
+
+private fun canUseAdminCommand(server: MinecraftServer, bot: ServerPlayer, command: String): Boolean {
+    if (bot.gameMode.gameModeForPlayer != GameType.CREATIVE) {
+        println("[AnimaFabric] Admin action blocked because ${bot.name.string} is not in creative mode: $command")
+        return false
+    }
+    if (!server.playerList.isOp(bot.nameAndId())) {
+        println("[AnimaFabric] Admin action blocked because ${bot.name.string} lacks operator permission: $command")
+        return false
+    }
+    return true
 }
 
 object ActionDriverFactory {
