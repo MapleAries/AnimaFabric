@@ -882,17 +882,11 @@ class ActionExecutor(
 
     private suspend fun executeSendMessage(params: Map<String, Any>): String {
         val message = getStringParam(params, "message") ?: getStringParam(params, "param0") ?: return "缺少参数 message"
-        GameThreadDispatcher.runOnGameThread(server) {
-            try {
-                server.commands.performPrefixedCommand(
-                    server.createCommandSourceStack(),
-                    "/say [$botName] $message"
-                )
-            } catch (e: Exception) {
-                println("[AnimaFabric] 发送消息失败: ${e.message}")
-            }
+        return if (driver.sendMessage(message)) {
+            "已发送消息"
+        } else {
+            "发送消息失败"
         }
-        return "已发送消息"
     }
 
     // ========== 合成 ==========

@@ -191,12 +191,15 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
         chatJobs[botName]?.cancel()
         chatJobs.remove(botName)
 
-        try {
-            server.commands.performPrefixedCommand(
-                server.createCommandSourceStack(),
-                "/player $botName stop"
-            )
-        } catch (_: Exception) {}
+        val scope = scopeFor(botName)
+        scope.launch {
+            ActionDriverFactory.create(
+                config.actionDriver,
+                botName,
+                server,
+                config.allowAdminTools
+            ).playerCommand("stop")
+        }
     }
 
     /**
