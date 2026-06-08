@@ -11,6 +11,11 @@ import net.minecraft.network.chat.Component
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.util.Mth
+import net.minecraft.world.InteractionHand
+import net.minecraft.world.phys.AABB
+import net.minecraft.world.phys.BlockHitResult
+import net.minecraft.world.phys.EntityHitResult
+import net.minecraft.world.phys.HitResult
 import net.minecraft.world.phys.Vec3
 import java.util.concurrent.ConcurrentHashMap
 
@@ -91,6 +96,8 @@ class NativeActionDriver(
             "unsneak" -> sneak(false)
             "sprint" -> sprint(true)
             "unsprint" -> sprint(false)
+            "attack" -> attack(parts.drop(1))
+            "use" -> use(parts.drop(1))
             else -> {
                 println("[AnimaFabric] Native action driver does not support '$command' yet for $botName")
                 false
@@ -207,6 +214,84 @@ class NativeActionDriver(
         }
     }
 
+    private suspend fun attack(args: List<String>): Boolean {
+        return runActionMode(args, defaultIntervalMs = 250L) {
+            attackOnce()
+        }
+    }
+
+    private suspend fun attackOnce(): Boolean {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread false
+            val entityHit = findLookEntity(bot, 4.5)
+            if (entityHit != null) {
+                bot.attack(entityHit.entity)
+                bot.swing(InteractionHand.MAIN_HAND)
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    private suspend fun use(args: List<String>): Boolean {
+        return runActionMode(args, defaultIntervalMs = 250L) {
+            useOnce()
+        }
+    }
+
+    private suspend fun useOnce(): Boolean {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread false
+            val hand = InteractionHand.MAIN_HAND
+            val stack = bot.getItemInHand(hand)
+            val hit = bot.pick(4.5, 0.0f, false)
+
+            val entityHit = findLookEntity(bot, 4.5)
+            val result = when {
+                entityHit != null -> bot.interactOn(entityHit.entity, hand, entityHit.location)
+                hit.type == HitResult.Type.BLOCK -> bot.gameMode.useItemOn(bot, bot.level(), stack, hand, hit as BlockHitResult)
+
+                else -> bot.gameMode.useItem(bot, bot.level(), stack, hand)
+            }
+
+            val consumed = result.consumesAction()
+            if (consumed) {
+                bot.swing(hand)
+            }
+            consumed
+        }
+    }
+
+    private suspend fun runActionMode(
+        args: List<String>,
+        defaultIntervalMs: Long,
+        action: suspend () -> Boolean
+    ): Boolean {
+        return when (args.firstOrNull()?.lowercase()) {
+            "continuous" -> {
+                startContinuousAction(botName) {
+                    while (true) {
+                        action()
+                        delay(defaultIntervalMs)
+                    }
+                }
+                true
+            }
+            "interval" -> {
+                val intervalTicks = args.getOrNull(1)?.toLongOrNull()?.coerceAtLeast(1) ?: 20L
+                startContinuousAction(botName) {
+                    while (true) {
+                        action()
+                        delay(intervalTicks * 50L)
+                    }
+                }
+                true
+            }
+            else -> action()
+        }
+    }
+
     private suspend fun look(args: List<String>): Boolean {
         if (args.size == 4 && args[0].equals("at", ignoreCase = true)) {
             val x = args[1].toDoubleOrNull() ?: return false
@@ -293,6 +378,22 @@ class NativeActionDriver(
             else -> 0.12
         }
         bot.deltaMovement = Vec3(movement.x * speed, bot.deltaMovement.y, movement.z * speed)
+    }
+
+    private fun findLookEntity(bot: ServerPlayer, range: Double): EntityHitResult? {
+        val eye = bot.eyePosition
+        val look = bot.lookAngle
+        val end = eye.add(look.scale(range))
+        val searchBox = AABB(eye, end).inflate(1.0)
+
+        return bot.level()
+            .getEntities(bot, searchBox) { entity -> entity.isPickable && !entity.isSpectator }
+            .mapNotNull { entity ->
+                val hit = entity.boundingBox.inflate(entity.pickRadius.toDouble()).clip(eye, end)
+                if (hit.isPresent) EntityHitResult(entity, hit.get()) to eye.distanceToSqr(hit.get()) else null
+            }
+            .minByOrNull { it.second }
+            ?.first
     }
 
     companion object {
