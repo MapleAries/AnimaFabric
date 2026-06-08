@@ -7,6 +7,9 @@ import com.maple.pathfinding.AStarPathfinder
 import com.maple.pathfinding.MovementType
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.resources.Identifier
+import net.minecraft.world.item.Item
+import net.minecraft.world.item.ItemStack
 
 /**
  * 工具执行器 - 通过 ActionDriver 控制 bot。
@@ -21,6 +24,14 @@ class ActionExecutor(
         botName,
         server,
         config.allowAdminTools
+    )
+
+    private data class CraftIngredient(val options: List<String>, val count: Int)
+    private data class CraftRecipe(
+        val result: String,
+        val resultCount: Int,
+        val ingredients: List<CraftIngredient>,
+        val requiresCraftingTable: Boolean = false
     )
 
     /**
@@ -758,6 +769,149 @@ class ActionExecutor(
         return BuiltInRegistries.BLOCK.getKey(block).toString()
     }
 
+    private fun itemId(item: Item): String {
+        return BuiltInRegistries.ITEM.getKey(item).toString()
+    }
+
+    private fun itemById(itemId: String): Item? {
+        return BuiltInRegistries.ITEM.getOptional(Identifier.parse(itemId)).orElse(null)
+    }
+
+    private fun countInventoryItems(bot: net.minecraft.server.level.ServerPlayer, options: List<String>): Int {
+        var count = 0
+        for (slot in 0 until bot.inventory.containerSize) {
+            val stack = bot.inventory.getItem(slot)
+            if (!stack.isEmpty && options.any { itemId(stack.item).equals(it, ignoreCase = true) }) {
+                count += stack.count
+            }
+        }
+        return count
+    }
+
+    private fun removeInventoryItems(
+        bot: net.minecraft.server.level.ServerPlayer,
+        options: List<String>,
+        count: Int
+    ): Boolean {
+        if (countInventoryItems(bot, options) < count) return false
+
+        var remaining = count
+        for (slot in 0 until bot.inventory.containerSize) {
+            if (remaining <= 0) break
+            val stack = bot.inventory.getItem(slot)
+            if (stack.isEmpty || options.none { itemId(stack.item).equals(it, ignoreCase = true) }) continue
+
+            val removed = minOf(remaining, stack.count)
+            stack.shrink(removed)
+            if (stack.isEmpty) {
+                bot.inventory.setItem(slot, ItemStack.EMPTY)
+            }
+            remaining -= removed
+        }
+        return remaining == 0
+    }
+
+    private fun addInventoryItem(bot: net.minecraft.server.level.ServerPlayer, itemId: String, count: Int): Boolean {
+        val item = itemById(itemId) ?: return false
+        return bot.inventory.add(ItemStack(item, count))
+    }
+
+    private fun canFitCraftResult(bot: net.minecraft.server.level.ServerPlayer, recipe: CraftRecipe): Boolean {
+        val resultItem = itemById(recipe.result) ?: return false
+        val maxStackSize = resultItem.defaultMaxStackSize
+        val simulatedCounts = mutableMapOf<Int, Int>()
+
+        for (slot in 0 until bot.inventory.containerSize) {
+            val stack = bot.inventory.getItem(slot)
+            if (stack.isEmpty) return true
+            simulatedCounts[slot] = stack.count
+        }
+
+        for (ingredient in recipe.ingredients) {
+            var remaining = ingredient.count
+            for (slot in 0 until bot.inventory.containerSize) {
+                if (remaining <= 0) break
+                val stack = bot.inventory.getItem(slot)
+                if (stack.isEmpty || ingredient.options.none { itemId(stack.item).equals(it, ignoreCase = true) }) {
+                    continue
+                }
+                val current = simulatedCounts[slot] ?: stack.count
+                val removed = minOf(current, remaining)
+                simulatedCounts[slot] = current - removed
+                remaining -= removed
+            }
+            if (remaining > 0) return false
+        }
+
+        if (simulatedCounts.values.any { it <= 0 }) return true
+
+        for (slot in 0 until bot.inventory.containerSize) {
+            val stack = bot.inventory.getItem(slot)
+            if (!stack.isEmpty && itemId(stack.item).equals(recipe.result, ignoreCase = true)) {
+                val simulatedCount = simulatedCounts[slot] ?: stack.count
+                if (simulatedCount + recipe.resultCount <= maxStackSize) return true
+            }
+        }
+
+        return false
+    }
+
+    private fun supportedCraftRecipes(): Map<String, CraftRecipe> {
+        val logs = listOf(
+            "minecraft:oak_log",
+            "minecraft:spruce_log",
+            "minecraft:birch_log",
+            "minecraft:jungle_log",
+            "minecraft:acacia_log",
+            "minecraft:dark_oak_log",
+            "minecraft:mangrove_log",
+            "minecraft:cherry_log",
+            "minecraft:pale_oak_log",
+            "minecraft:crimson_stem",
+            "minecraft:warped_stem"
+        )
+        val planks = listOf(
+            "minecraft:oak_planks",
+            "minecraft:spruce_planks",
+            "minecraft:birch_planks",
+            "minecraft:jungle_planks",
+            "minecraft:acacia_planks",
+            "minecraft:dark_oak_planks",
+            "minecraft:mangrove_planks",
+            "minecraft:cherry_planks",
+            "minecraft:pale_oak_planks",
+            "minecraft:crimson_planks",
+            "minecraft:warped_planks"
+        )
+        val stones = listOf("minecraft:cobblestone", "minecraft:cobbled_deepslate")
+
+        fun recipe(
+            result: String,
+            resultCount: Int,
+            ingredients: List<CraftIngredient>,
+            table: Boolean = false
+        ) = CraftRecipe(result, resultCount, ingredients, table)
+
+        fun ingredient(count: Int, vararg options: String) = CraftIngredient(options.toList(), count)
+        fun planksIngredient(count: Int) = CraftIngredient(planks, count)
+        fun logsIngredient(count: Int) = CraftIngredient(logs, count)
+        fun stonesIngredient(count: Int) = CraftIngredient(stones, count)
+
+        return mapOf(
+            "minecraft:oak_planks" to recipe("minecraft:oak_planks", 4, listOf(logsIngredient(1))),
+            "minecraft:stick" to recipe("minecraft:stick", 4, listOf(planksIngredient(2))),
+            "minecraft:crafting_table" to recipe("minecraft:crafting_table", 1, listOf(planksIngredient(4))),
+            "minecraft:wooden_pickaxe" to recipe("minecraft:wooden_pickaxe", 1, listOf(planksIngredient(3), ingredient(2, "minecraft:stick")), table = true),
+            "minecraft:wooden_axe" to recipe("minecraft:wooden_axe", 1, listOf(planksIngredient(3), ingredient(2, "minecraft:stick")), table = true),
+            "minecraft:wooden_sword" to recipe("minecraft:wooden_sword", 1, listOf(planksIngredient(2), ingredient(1, "minecraft:stick"))),
+            "minecraft:stone_pickaxe" to recipe("minecraft:stone_pickaxe", 1, listOf(stonesIngredient(3), ingredient(2, "minecraft:stick")), table = true),
+            "minecraft:stone_axe" to recipe("minecraft:stone_axe", 1, listOf(stonesIngredient(3), ingredient(2, "minecraft:stick")), table = true),
+            "minecraft:stone_sword" to recipe("minecraft:stone_sword", 1, listOf(stonesIngredient(2), ingredient(1, "minecraft:stick"))),
+            "minecraft:furnace" to recipe("minecraft:furnace", 1, listOf(stonesIngredient(8)), table = true),
+            "minecraft:torch" to recipe("minecraft:torch", 4, listOf(ingredient(1, "minecraft:coal", "minecraft:charcoal"), ingredient(1, "minecraft:stick")))
+        )
+    }
+
     private suspend fun findNearestBlock(block: String, radius: Int): BlockPos? {
         return findNearbyBlocks(block, radius, limit = 1).firstOrNull()
     }
@@ -912,11 +1066,57 @@ class ActionExecutor(
     private suspend fun executeCraft(params: Map<String, Any>): String {
         val item = params["param0"] as? String ?: params["item"] as? String ?: return "缺少参数 item"
         val itemId = resolveItemId(item)
+        val recipes = supportedCraftRecipes()
+        val recipe = recipes[itemId]
+
+        if (recipe == null) {
+            return if (executeServerCommand("give $botName $itemId 1")) {
+                "已在创造/OP 模式给予 $item"
+            } else {
+                "暂不支持合成 $itemId，且当前假人无权使用 admin 兜底"
+            }
+        }
+
+        val crafted = GameThreadDispatcher.runOnGameThread(server) {
+            val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread null
+
+            if (recipe.requiresCraftingTable && countInventoryItems(bot, listOf("minecraft:crafting_table")) <= 0) {
+                return@runOnGameThread "缺少 crafting_table"
+            }
+
+            val missing = recipe.ingredients.firstOrNull { ingredient ->
+                countInventoryItems(bot, ingredient.options) < ingredient.count
+            }
+            if (missing != null) {
+                val names = missing.options.joinToString("/")
+                return@runOnGameThread "缺少材料 $names x${missing.count}"
+            }
+
+            if (!canFitCraftResult(bot, recipe)) {
+                return@runOnGameThread "背包已满，无法放入 ${recipe.result}"
+            }
+
+            for (ingredient in recipe.ingredients) {
+                if (!removeInventoryItems(bot, ingredient.options, ingredient.count)) {
+                    return@runOnGameThread "消耗材料失败"
+                }
+            }
+
+            if (!addInventoryItem(bot, recipe.result, recipe.resultCount)) {
+                return@runOnGameThread "背包已满，无法放入 ${recipe.result}"
+            }
+
+            "已合成 ${recipe.result} x${recipe.resultCount}"
+        }
+
+        if (crafted != null && crafted.startsWith("已合成")) {
+            return crafted
+        }
 
         return if (executeServerCommand("give $botName $itemId 1")) {
-            "已给予 $item"
+            "已在创造/OP 模式给予 $item"
         } else {
-            "给予物品失败"
+            crafted ?: "Bot 不存在"
         }
     }
 }

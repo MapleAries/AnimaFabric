@@ -218,7 +218,7 @@ object ToolRegistry {
         ),
         Tool(
             name = "craft",
-            description = "调试模式给予物品。当前实现通过命令给予物品，并不消耗背包材料。",
+            description = "合成物品。生存模式会消耗背包材料；创造且 OP 时才允许 admin 兜底。",
             parameters = listOf(
                 ToolParameter("item", "string", "物品名称：planks/crafting_table/stick/wooden_pickaxe/wooden_axe/wooden_sword/stone_pickaxe/stone_axe/iron_pickaxe/iron_sword/furnace/torch/cobblestone 等")
             )
