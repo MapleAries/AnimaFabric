@@ -5,6 +5,7 @@ import com.maple.entity.FakePlayerManager
 import com.maple.locate.StructureLocator
 import com.maple.pathfinding.AStarPathfinder
 import com.maple.pathfinding.MovementType
+import com.maple.pathfinding.ToolCostCalculator
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
@@ -38,6 +39,14 @@ class ActionExecutor(
         val blockId: String,
         val mainHand: MainHandSnapshot,
         val distance: Double
+    )
+    private data class MiningSnapshot(
+        val blockId: String?,
+        val hardness: Float,
+        val distance: Double,
+        val canHarvest: Boolean,
+        val miningTicks: Double,
+        val inventory: Map<String, Int>
     )
 
     /**
@@ -539,64 +548,36 @@ class ActionExecutor(
         val z = getIntParam(params, "z") ?: return "缺少参数 z"
 
         val targetPos = BlockPos(x, y, z)
-        val blockCenter = net.minecraft.world.phys.Vec3.atCenterOf(targetPos)
-
-        // 距离检查：超过 3 格先靠近
-        val distance = GameThreadDispatcher.runOnGameThread(server) {
-            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
-            bot.eyePosition.distanceTo(blockCenter)
-        } ?: return "Bot 不存在"
-
-        if (distance > 3.0) {
-            // 先移动到方块附近
-            val botPos = GameThreadDispatcher.runOnGameThread(server) {
-                server.playerList.getPlayerByName(botName)?.blockPosition()
-            } ?: return "Bot 不存在"
-            val dx = x - botPos.x
-            val dz = z - botPos.z
-            val dist = Math.sqrt((dx * dx + dz * dz).toDouble()).toInt()
-
-            // 向方块方向移动（保持安全距离 2 格）
-            val moveSteps = (dist - 2).coerceAtLeast(1)
-            executeCarpetCommand("look at $x $y $z")
-            executeCarpetCommand("move forward")
-            kotlinx.coroutines.delay((moveSteps * 250L).coerceAtMost(3000L))
-            executeCarpetCommand("stop")
-
-            // 重新检查距离
-            val newDist = GameThreadDispatcher.runOnGameThread(server) {
-                val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
-                bot.eyePosition.distanceTo(blockCenter)
-            } ?: return "Bot 不存在"
-            if (newDist > 5.0) {
-                return "挖掘失败：无法靠近方块（当前距离 ${"%.1f".format(newDist)} 格）"
-            }
+        val before = captureMiningState(targetPos) ?: return "Bot does not exist"
+        if (before.blockId == null) return "Mine failed: target block is already air ($x, $y, $z)"
+        if (before.hardness < 0.0f) return "Mine failed: ${before.blockId} is not breakable"
+        if (before.distance > 5.0) {
+            return "Mine failed: target block is too far (${"%.1f".format(before.distance)} blocks)"
+        }
+        if (!before.canHarvest) {
+            return "Mine failed: current tool cannot harvest ${before.blockId}"
         }
 
-        // 看向方块
         executeCarpetCommand("look at $x $y $z")
+        val miningDelayMs = (before.miningTicks * 50.0).toLong().coerceIn(50L, 30000L)
+        kotlinx.coroutines.delay(miningDelayMs)
 
-        // 开始挖掘
-        executeCarpetCommand("attack continuous")
-
-        // 等待方块被破坏
-        var ticks = 0
-        val maxTicks = 100
-        var isBroken = false
-        while (ticks < maxTicks) {
-            isBroken = GameThreadDispatcher.runOnGameThread(server) {
-                server.playerList.getPlayerByName(botName)?.level()?.getBlockState(targetPos)?.isAir ?: false
-            }
-            if (isBroken) break
-            kotlinx.coroutines.delay(50)
-            ticks++
+        val destroyed = GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread false
+            bot.gameMode.destroyBlock(targetPos)
         }
+        if (!destroyed) return "Mine failed: game mode refused to destroy ${before.blockId}"
 
-        executeCarpetCommand("stop")
-        if (!isBroken) {
-            return "挖掘失败：方块在 ${maxTicks} ticks 内未被破坏 ($x, $y, $z)"
+        val broken = waitForBlockAir(targetPos)
+        if (!broken) return "Mine failed: ${before.blockId} did not break at ($x, $y, $z)"
+
+        val afterInventory = inventoryCounts() ?: return "Mined ${before.blockId}, but inventory check failed"
+        val gained = inventoryGainSummary(before.inventory, afterInventory)
+        return if (gained.isBlank()) {
+            "Mined ${before.blockId} at ($x, $y, $z); no inventory pickup detected"
+        } else {
+            "Mined ${before.blockId} at ($x, $y, $z); picked up $gained"
         }
-        return "已挖掘 ($x, $y, $z)"
     }
 
     private suspend fun executePlaceBlock(params: Map<String, Any>): String {
@@ -849,6 +830,63 @@ class ActionExecutor(
             kotlinx.coroutines.delay(100)
         }
         return false
+    }
+
+    private suspend fun captureMiningState(targetPos: BlockPos): MiningSnapshot? {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
+            val level = bot.level()
+            val state = level.getBlockState(targetPos)
+            val blockId = if (state.isAir) null else blockStateId(state)
+            MiningSnapshot(
+                blockId,
+                if (state.isAir) 0.0f else state.getDestroySpeed(level, targetPos),
+                bot.eyePosition.distanceTo(net.minecraft.world.phys.Vec3.atCenterOf(targetPos)),
+                state.isAir || ToolCostCalculator.canHarvest(bot, state),
+                ToolCostCalculator.getMiningCost(level, targetPos, bot),
+                inventoryCountsInGameThread(bot)
+            )
+        }
+    }
+
+    private suspend fun waitForBlockAir(targetPos: BlockPos): Boolean {
+        repeat(20) {
+            val isAir = GameThreadDispatcher.runOnGameThread(server) {
+                val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread false
+                bot.level().getBlockState(targetPos).isAir
+            }
+            if (isAir) return true
+            kotlinx.coroutines.delay(100)
+        }
+        return false
+    }
+
+    private suspend fun inventoryCounts(): Map<String, Int>? {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
+            inventoryCountsInGameThread(bot)
+        }
+    }
+
+    private fun inventoryCountsInGameThread(bot: net.minecraft.server.level.ServerPlayer): Map<String, Int> {
+        val counts = mutableMapOf<String, Int>()
+        for (slot in 0 until bot.inventory.containerSize) {
+            val stack = bot.inventory.getItem(slot)
+            if (!stack.isEmpty) {
+                val id = itemId(stack.item)
+                counts[id] = (counts[id] ?: 0) + stack.count
+            }
+        }
+        return counts
+    }
+
+    private fun inventoryGainSummary(before: Map<String, Int>, after: Map<String, Int>): String {
+        return after.entries
+            .mapNotNull { (item, count) ->
+                val delta = count - (before[item] ?: 0)
+                if (delta > 0) "$item x$delta" else null
+            }
+            .joinToString(", ")
     }
 
     private fun itemById(itemId: String): Item? {
