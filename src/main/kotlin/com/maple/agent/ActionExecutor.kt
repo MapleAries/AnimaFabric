@@ -33,6 +33,12 @@ class ActionExecutor(
         val ingredients: List<CraftIngredient>,
         val requiresCraftingTable: Boolean = false
     )
+    private data class MainHandSnapshot(val itemId: String?, val count: Int)
+    private data class UseOnBlockSnapshot(
+        val blockId: String,
+        val mainHand: MainHandSnapshot,
+        val distance: Double
+    )
 
     /**
      * 执行单个工具调用，返回执行结果。
@@ -416,9 +422,19 @@ class ActionExecutor(
             return "Failed to equip $itemId"
         }
 
+        val targetPos = BlockPos(x, y, z)
+        val before = captureUseOnBlockState(targetPos) ?: return "Bot does not exist"
+        if (before.distance > 5.0) {
+            return "Use failed: target block is too far (${"%.1f".format(before.distance)} blocks)"
+        }
+
         executeCarpetCommand("look at $x $y $z")
         executeCarpetCommand("use")
-        return "Used $itemId on block ($x, $y, $z)"
+        return if (waitForUseOnBlockChange(targetPos, before)) {
+            "Used $itemId on block ($x, $y, $z)"
+        } else {
+            "Use failed: no block or item change detected at ($x, $y, $z)"
+        }
     }
 
     private suspend fun executeEatFood(params: Map<String, Any>): String {
@@ -598,15 +614,25 @@ class ActionExecutor(
             return "放置失败：无法将 $blockName 准备到主手"
         }
 
+        val placementDistance = distanceToBlockCenter(supportPos) ?: return "Bot 不存在"
+        if (placementDistance > 5.0) {
+            return "Place failed: support block is too far (${"%.1f".format(placementDistance)} blocks)"
+        }
+
+        val beforeHand = mainHandSnapshot() ?: return "Bot 不存在"
+
         // 看向支撑方块，让右键能把方块放到目标空气格。
         executeCarpetCommand("look at ${supportPos.x} ${supportPos.y} ${supportPos.z}")
 
         // 使用物品放置（use = 右键）
         executeCarpetCommand("use")
 
-        val placedBlock = waitForPlacedBlock(targetPos)
+        val placedBlock = waitForPlacedBlock(targetPos, itemId)
+        val afterHand = mainHandSnapshot()
         return if (placedBlock != null) {
             "已在 (${targetPos.x}, ${targetPos.y}, ${targetPos.z}) 放置 $placedBlock"
+        } else if (afterHand != null && afterHand != beforeHand) {
+            "Place failed: item changed but target block did not update at (${targetPos.x}, ${targetPos.y}, ${targetPos.z})"
         } else {
             "放置失败：目标位置 (${targetPos.x}, ${targetPos.y}, ${targetPos.z}) 未变为 $blockName，请检查距离、准星面和主手方块"
         }
@@ -769,8 +795,60 @@ class ActionExecutor(
         return BuiltInRegistries.BLOCK.getKey(block).toString()
     }
 
+    private fun blockStateId(state: net.minecraft.world.level.block.state.BlockState): String {
+        return blockId(state.block)
+    }
+
     private fun itemId(item: Item): String {
         return BuiltInRegistries.ITEM.getKey(item).toString()
+    }
+
+    private suspend fun mainHandSnapshot(): MainHandSnapshot? {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
+            val stack = bot.mainHandItem
+            if (stack.isEmpty) {
+                MainHandSnapshot(null, 0)
+            } else {
+                MainHandSnapshot(itemId(stack.item), stack.count)
+            }
+        }
+    }
+
+    private suspend fun captureUseOnBlockState(targetPos: BlockPos): UseOnBlockSnapshot? {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread null
+            val stack = bot.mainHandItem
+            val hand = if (stack.isEmpty) {
+                MainHandSnapshot(null, 0)
+            } else {
+                MainHandSnapshot(itemId(stack.item), stack.count)
+            }
+            UseOnBlockSnapshot(
+                blockStateId(bot.level().getBlockState(targetPos)),
+                hand,
+                bot.eyePosition.distanceTo(net.minecraft.world.phys.Vec3.atCenterOf(targetPos))
+            )
+        }
+    }
+
+    private suspend fun waitForUseOnBlockChange(targetPos: BlockPos, before: UseOnBlockSnapshot): Boolean {
+        repeat(10) {
+            val changed = GameThreadDispatcher.runOnGameThread(server) {
+                val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread false
+                val currentBlock = blockStateId(bot.level().getBlockState(targetPos))
+                val stack = bot.mainHandItem
+                val currentHand = if (stack.isEmpty) {
+                    MainHandSnapshot(null, 0)
+                } else {
+                    MainHandSnapshot(itemId(stack.item), stack.count)
+                }
+                currentBlock != before.blockId || currentHand != before.mainHand
+            }
+            if (changed) return true
+            kotlinx.coroutines.delay(100)
+        }
+        return false
     }
 
     private fun itemById(itemId: String): Item? {
@@ -962,16 +1040,19 @@ class ActionExecutor(
         return positions
     }
 
-    private suspend fun waitForPlacedBlock(targetPos: BlockPos): String? {
+    private suspend fun waitForPlacedBlock(targetPos: BlockPos, expectedBlockId: String? = null): String? {
         repeat(15) {
             val (botExists, currentBlock) = GameThreadDispatcher.runOnGameThread(server) {
                 val bot = server.playerList.getPlayerByName(botName) ?: return@runOnGameThread false to null
                 val state = bot.level().getBlockState(targetPos)
-                true to if (!state.isAir) state.block.name.string else null
+                val currentId = if (!state.isAir) blockStateId(state) else null
+                true to currentId
             }
 
             if (!botExists) return null
-            if (currentBlock != null) return currentBlock
+            if (currentBlock != null && (expectedBlockId == null || currentBlock.equals(expectedBlockId, ignoreCase = true))) {
+                return currentBlock
+            }
             kotlinx.coroutines.delay(100)
         }
         return null
