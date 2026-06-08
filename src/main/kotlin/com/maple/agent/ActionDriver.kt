@@ -23,6 +23,7 @@ interface ActionDriver {
     suspend fun playerCommand(command: String): Boolean
     suspend fun adminCommand(command: String): Boolean
     suspend fun sendMessage(message: String): Boolean
+    suspend fun killBot(): Boolean
 }
 
 class CarpetActionDriver(
@@ -72,6 +73,21 @@ class CarpetActionDriver(
                 true
             } catch (e: Exception) {
                 println("[AnimaFabric] Carpet message failed: ${e.message}")
+                false
+            }
+        }
+    }
+
+    override suspend fun killBot(): Boolean {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            try {
+                server.commands.performPrefixedCommand(
+                    server.createCommandSourceStack(),
+                    "/player $botName kill"
+                )
+                true
+            } catch (e: Exception) {
+                println("[AnimaFabric] Carpet kill failed: ${e.message}")
                 false
             }
         }
@@ -130,6 +146,15 @@ class NativeActionDriver(
                 Component.literal("[${bot.name.string}] $message"),
                 false
             )
+            true
+        }
+    }
+
+    override suspend fun killBot(): Boolean {
+        cancelContinuousAction(botName)
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread false
+            bot.kill(bot.level())
             true
         }
     }

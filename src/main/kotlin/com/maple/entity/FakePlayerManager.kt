@@ -30,22 +30,4 @@ object FakePlayerManager {
     fun listNames(server: MinecraftServer): List<String> {
         return getCarpetBots(server).map { it.name.string }
     }
-
-    fun kill(server: MinecraftServer, name: String): Boolean {
-        return try {
-            val bot = getBot(server, name) ?: return false
-            val botName = bot.name.string
-            server.commands.performPrefixedCommand(
-                server.createCommandSourceStack(),
-                "/player $botName kill"
-            )
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    fun killAll(server: MinecraftServer) {
-        listNames(server).forEach { kill(server, it) }
-    }
 }

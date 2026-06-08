@@ -9,8 +9,7 @@ import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 
 /**
- * 工具执行器 - 通过 Carpet /player 命令控制 bot。
- * 完整支持 Carpet 的所有 player 子命令。
+ * 工具执行器 - 通过 ActionDriver 控制 bot。
  */
 class ActionExecutor(
     private val botName: String,
@@ -94,7 +93,7 @@ class ActionExecutor(
     }
 
     /**
-     * 通过 Carpet 的 /player 命令执行操作。
+     * 通过当前 ActionDriver 执行玩家动作。
      */
     private suspend fun executeCarpetCommand(command: String): Boolean {
         return driver.playerCommand(command)
@@ -895,16 +894,10 @@ class ActionExecutor(
         val item = params["param0"] as? String ?: params["item"] as? String ?: return "缺少参数 item"
         val itemId = resolveItemId(item)
 
-        return try {
-            GameThreadDispatcher.runOnGameThread(server) {
-                server.commands.performPrefixedCommand(
-                    server.createCommandSourceStack(),
-                    "give $botName $itemId 1"
-                )
-            }
+        return if (executeServerCommand("give $botName $itemId 1")) {
             "已给予 $item"
-        } catch (e: Exception) {
-            "给予物品失败: ${e.message}"
+        } else {
+            "给予物品失败"
         }
     }
 }

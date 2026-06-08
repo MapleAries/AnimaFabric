@@ -223,15 +223,24 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
         if (lastActiveBotName == botName) {
             lastActiveBotName = null
         }
-        FakePlayerManager.kill(server, name)
+
+        val currentConfig = config
+        val scope = scopeFor(botName)
+        scope.launch {
+            ActionDriverFactory.create(
+                currentConfig.actionDriver,
+                botName,
+                server,
+                currentConfig.allowAdminTools
+            ).killBot()
+        }
     }
 
     /**
      * 移除所有假人。
      */
     fun killAll() {
-        stopAll()
-        FakePlayerManager.killAll(server)
+        FakePlayerManager.listNames(server).forEach { kill(it) }
         scopes.clear()
         memories.clear()
         chatJobs.clear()

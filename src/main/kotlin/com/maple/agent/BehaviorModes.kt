@@ -1,13 +1,21 @@
 package com.maple.agent
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.entity.MobCategory
 import net.minecraft.world.phys.AABB
 
 /**
- * 自动行为模式 - 通过 Carpet 命令控制。
+ * 自动行为模式 - 通过 ActionDriver 控制。
  */
-class BehaviorModes(private val botName: String, private val server: net.minecraft.server.MinecraftServer) {
+class BehaviorModes(
+    private val botName: String,
+    private val server: net.minecraft.server.MinecraftServer,
+    private val driver: ActionDriver = CarpetActionDriver(botName, server, allowAdminTools = true)
+) {
 
     var selfPreservation = true
     var unstuck = true
@@ -16,17 +24,13 @@ class BehaviorModes(private val botName: String, private val server: net.minecra
 
     private var lastPosition: net.minecraft.world.phys.Vec3? = null
     private var stuckTicks = 0
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    private fun executeCarpetCommand(command: String): Boolean {
-        return try {
-            server.commands.performPrefixedCommand(
-                server.createCommandSourceStack(),
-                "/player $botName $command"
-            )
-            true
-        } catch (e: Exception) {
-            false
+    private fun executePlayerCommand(command: String): Boolean {
+        scope.launch {
+            driver.playerCommand(command)
         }
+        return true
     }
 
     fun tick(): Boolean {
@@ -48,8 +52,8 @@ class BehaviorModes(private val botName: String, private val server: net.minecra
         val isDrowning = bot.airSupply < 100
 
         if (health < 6 || isBurning || isInLava || isDrowning) {
-            executeCarpetCommand("move forward")
-            executeCarpetCommand("jump")
+            executePlayerCommand("move forward")
+            executePlayerCommand("jump")
             return true
         }
         return false
@@ -63,8 +67,8 @@ class BehaviorModes(private val botName: String, private val server: net.minecra
             if (distance < 0.1) {
                 stuckTicks++
                 if (stuckTicks > 60) {
-                    executeCarpetCommand("jump")
-                    executeCarpetCommand("move forward")
+                    executePlayerCommand("jump")
+                    executePlayerCommand("move forward")
                     stuckTicks = 0
                     return true
                 }
@@ -86,8 +90,8 @@ class BehaviorModes(private val botName: String, private val server: net.minecra
         if (hostileEntities.isNotEmpty()) {
             val nearest = hostileEntities.minByOrNull { it.distanceTo(bot) }
             if (nearest != null) {
-                executeCarpetCommand("look at ${nearest.blockPosition().x} ${nearest.blockPosition().y} ${nearest.blockPosition().z}")
-                executeCarpetCommand("attack continuous")
+                executePlayerCommand("look at ${nearest.blockPosition().x} ${nearest.blockPosition().y} ${nearest.blockPosition().z}")
+                executePlayerCommand("attack continuous")
                 return true
             }
         }
@@ -103,8 +107,8 @@ class BehaviorModes(private val botName: String, private val server: net.minecra
         if (items.isNotEmpty()) {
             val nearest = items.minByOrNull { it.distanceTo(bot) }
             if (nearest != null) {
-                executeCarpetCommand("look at ${nearest.blockPosition().x} ${nearest.blockPosition().y} ${nearest.blockPosition().z}")
-                executeCarpetCommand("move forward")
+                executePlayerCommand("look at ${nearest.blockPosition().x} ${nearest.blockPosition().y} ${nearest.blockPosition().z}")
+                executePlayerCommand("move forward")
                 return true
             }
         }
