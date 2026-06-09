@@ -932,6 +932,49 @@ class ActionExecutor(
         return bot.inventory.add(ItemStack(item, count))
     }
 
+    private fun woodLogIds(): List<String> {
+        return listOf(
+            "minecraft:oak_log",
+            "minecraft:spruce_log",
+            "minecraft:birch_log",
+            "minecraft:jungle_log",
+            "minecraft:acacia_log",
+            "minecraft:dark_oak_log",
+            "minecraft:mangrove_log",
+            "minecraft:cherry_log",
+            "minecraft:pale_oak_log",
+            "minecraft:crimson_stem",
+            "minecraft:warped_stem"
+        )
+    }
+
+    private fun plankIds(): List<String> {
+        return listOf(
+            "minecraft:oak_planks",
+            "minecraft:spruce_planks",
+            "minecraft:birch_planks",
+            "minecraft:jungle_planks",
+            "minecraft:acacia_planks",
+            "minecraft:dark_oak_planks",
+            "minecraft:mangrove_planks",
+            "minecraft:cherry_planks",
+            "minecraft:pale_oak_planks",
+            "minecraft:crimson_planks",
+            "minecraft:warped_planks"
+        )
+    }
+
+    private fun ensurePlanksForCrafting(bot: net.minecraft.server.level.ServerPlayer, requiredCount: Int): Boolean {
+        val currentPlanks = countInventoryItems(bot, plankIds())
+        val missingPlanks = requiredCount - currentPlanks
+        if (missingPlanks <= 0) return true
+
+        val logsToConvert = ((missingPlanks + 3) / 4).coerceAtLeast(1)
+        if (countInventoryItems(bot, woodLogIds()) < logsToConvert) return false
+        if (!removeInventoryItems(bot, woodLogIds(), logsToConvert)) return false
+        return addInventoryItem(bot, "minecraft:oak_planks", logsToConvert * 4)
+    }
+
     private fun canFitCraftResult(bot: net.minecraft.server.level.ServerPlayer, recipe: CraftRecipe): Boolean {
         val resultItem = itemById(recipe.result) ?: return false
         val maxStackSize = resultItem.defaultMaxStackSize
@@ -973,32 +1016,8 @@ class ActionExecutor(
     }
 
     private fun supportedCraftRecipes(): Map<String, CraftRecipe> {
-        val logs = listOf(
-            "minecraft:oak_log",
-            "minecraft:spruce_log",
-            "minecraft:birch_log",
-            "minecraft:jungle_log",
-            "minecraft:acacia_log",
-            "minecraft:dark_oak_log",
-            "minecraft:mangrove_log",
-            "minecraft:cherry_log",
-            "minecraft:pale_oak_log",
-            "minecraft:crimson_stem",
-            "minecraft:warped_stem"
-        )
-        val planks = listOf(
-            "minecraft:oak_planks",
-            "minecraft:spruce_planks",
-            "minecraft:birch_planks",
-            "minecraft:jungle_planks",
-            "minecraft:acacia_planks",
-            "minecraft:dark_oak_planks",
-            "minecraft:mangrove_planks",
-            "minecraft:cherry_planks",
-            "minecraft:pale_oak_planks",
-            "minecraft:crimson_planks",
-            "minecraft:warped_planks"
-        )
+        val logs = woodLogIds()
+        val planks = plankIds()
         val stones = listOf("minecraft:cobblestone", "minecraft:cobbled_deepslate")
 
         fun recipe(
@@ -1201,6 +1220,12 @@ class ActionExecutor(
 
             if (recipe.requiresCraftingTable && countInventoryItems(bot, listOf("minecraft:crafting_table")) <= 0) {
                 return@runOnGameThread "缺少 crafting_table"
+            }
+
+            for (ingredient in recipe.ingredients) {
+                if (ingredient.options == plankIds() && !ensurePlanksForCrafting(bot, ingredient.count)) {
+                    return@runOnGameThread "缺少材料 ${ingredient.options.joinToString("/")} x${ingredient.count}"
+                }
             }
 
             val missing = recipe.ingredients.firstOrNull { ingredient ->
