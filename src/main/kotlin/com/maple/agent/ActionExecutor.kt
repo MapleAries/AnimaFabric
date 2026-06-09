@@ -11,6 +11,7 @@ import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.level.GameType
 
 /**
  * 工具执行器 - 通过 ActionDriver 控制 bot。
@@ -932,6 +933,14 @@ class ActionExecutor(
         return bot.inventory.add(ItemStack(item, count))
     }
 
+    private suspend fun grantCreativeItem(itemId: String, count: Int): Boolean {
+        return GameThreadDispatcher.runOnGameThread(server) {
+            val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread false
+            if (bot.gameMode.gameModeForPlayer != GameType.CREATIVE) return@runOnGameThread false
+            addInventoryItem(bot, itemId, count)
+        }
+    }
+
     private fun woodLogIds(): List<String> {
         return listOf(
             "minecraft:oak_log",
@@ -1208,11 +1217,7 @@ class ActionExecutor(
         val recipe = recipes[itemId]
 
         if (recipe == null) {
-            return if (executeServerCommand("give $botName $itemId 1")) {
-                "已在创造/OP 模式给予 $item"
-            } else {
-                "暂不支持合成 $itemId，且当前假人无权使用 admin 兜底"
-            }
+            return grantCraftFallback(itemId, item)
         }
 
         val crafted = GameThreadDispatcher.runOnGameThread(server) {
@@ -1257,10 +1262,15 @@ class ActionExecutor(
             return crafted
         }
 
-        return if (executeServerCommand("give $botName $itemId 1")) {
-            "已在创造/OP 模式给予 $item"
-        } else {
-            crafted ?: "Bot 不存在"
+        val fallback = grantCraftFallback(itemId, item)
+        return if (fallback.startsWith("已")) fallback else crafted ?: fallback
+    }
+
+    private suspend fun grantCraftFallback(itemId: String, itemName: String): String {
+        return when {
+            grantCreativeItem(itemId, 1) -> "已在创造模式获取 $itemName"
+            executeServerCommand("give $botName $itemId 1") -> "已通过 admin 兜底给予 $itemName"
+            else -> "暂不支持合成 $itemId，且当前假人无法获取该物品"
         }
     }
 }
