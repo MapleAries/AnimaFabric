@@ -158,9 +158,7 @@ class NativeActionDriver(
     override suspend fun killBot(): Boolean {
         cancelContinuousAction(botName)
         return GameThreadDispatcher.runOnGameThread(server) {
-            val bot = FakePlayerManager.getBot(server, botName) ?: return@runOnGameThread false
-            bot.kill(bot.level())
-            true
+            FakePlayerManager.remove(server, botName)
         }
     }
 

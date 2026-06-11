@@ -46,7 +46,7 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
     fun sendCommand(name: String, command: String, sender: net.minecraft.server.level.ServerPlayer? = null, onComplete: (String) -> Unit) {
         val bot = FakePlayerManager.getBot(server, name)
         if (bot == null) {
-            onComplete("假人 '$name' 不存在。请先使用 /player <name> spawn 生成假人。")
+            onComplete("假人 '$name' 不存在。请先使用 /anima spawn <name> 生成假人。")
             return
         }
 
@@ -133,7 +133,7 @@ class AgentController(initialConfig: AnimaFabricConfig, private val server: Mine
     fun resumePlan(name: String, planPath: Path, onComplete: (String) -> Unit) {
         val bot = FakePlayerManager.getBot(server, name)
         if (bot == null) {
-            onComplete("假人 '$name' 不存在。请先使用 /player <name> spawn 生成假人。")
+            onComplete("假人 '$name' 不存在。请先使用 /anima spawn <name> 生成假人。")
             return
         }
 

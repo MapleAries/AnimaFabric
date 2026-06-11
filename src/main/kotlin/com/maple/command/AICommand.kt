@@ -42,6 +42,11 @@ object AICommand {
                             .executes { stopBot(it) }
                         )
                     )
+                    .then(Commands.literal("spawn")
+                        .then(Commands.argument("name", StringArgumentType.word())
+                            .executes { spawnBot(it) }
+                        )
+                    )
                     .then(Commands.literal("kill")
                         .then(Commands.argument("name", StringArgumentType.word())
                             .executes { killBot(it) }
@@ -138,7 +143,7 @@ object AICommand {
         }
 
         if (!FakePlayerManager.exists(context.source.server, name)) {
-            context.source.sendFailure(Component.literal("假人 '$name' 不存在。请先使用 /player <name> spawn 生成假人。"))
+            context.source.sendFailure(Component.literal("假人 '$name' 不存在。请先使用 /anima spawn <name> 生成假人。"))
             return 0
         }
 
@@ -226,6 +231,26 @@ object AICommand {
         return Command.SINGLE_SUCCESS
     }
 
+    private fun spawnBot(context: CommandContext<CommandSourceStack>): Int {
+        val name = StringArgumentType.getString(context, "name")
+        if (FakePlayerManager.exists(context.source.server, name)) {
+            context.source.sendFailure(Component.literal("假人 '$name' 已存在"))
+            return 0
+        }
+
+        val pos = BlockPos.containing(context.source.position)
+        val bot = FakePlayerManager.spawnNative(context.source.server, name, pos)
+        if (bot == null) {
+            context.source.sendFailure(Component.literal("生成假人 '$name' 失败"))
+            return 0
+        }
+
+        context.source.sendSuccess({
+            Component.literal("已生成 Anima 假人: ${bot.name.string}")
+        }, true)
+        return Command.SINGLE_SUCCESS
+    }
+
     private fun killBot(context: CommandContext<CommandSourceStack>): Int {
         val name = StringArgumentType.getString(context, "name")
         val ctrl = controller ?: return 0
@@ -247,7 +272,7 @@ object AICommand {
         val names = FakePlayerManager.listNames(context.source.server)
         if (names.isEmpty()) {
             context.source.sendSuccess({
-                Component.literal("当前没有假人。请使用 /player <name> spawn 生成假人。")
+                Component.literal("当前没有假人。请使用 /anima spawn <name> 生成假人。")
             }, false)
         } else {
             context.source.sendSuccess({
